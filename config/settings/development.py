@@ -8,7 +8,7 @@ from decouple import config
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '192.168.100.14', 'Abdulrahmans-Mac-Studio.local']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '192.168.100.15', 'Abdulrahmans-Mac-Studio.local']
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Set USE_POSTGRES=True in .env once PostgreSQL is installed and running.
