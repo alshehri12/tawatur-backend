@@ -1,16 +1,16 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 from .models import FraudAlert
 
 
 @admin.register(FraudAlert)
-class FraudAlertAdmin(admin.ModelAdmin):
+class FraudAlertAdmin(ModelAdmin):
     list_display = ['id', 'alert_type', 'severity', 'status', 'product', 'user', 'created_at']
     list_filter = ['alert_type', 'severity', 'status']
     search_fields = ['description', 'product__id']
     readonly_fields = ['created_at', 'resolved_at']
     ordering = ['-created_at']
 
-    # Quick-action: mark selected alerts as resolved
     actions = ['mark_resolved', 'mark_dismissed']
 
     @admin.action(description='تحديد كمحلولة')

@@ -1,0 +1,154 @@
+{% extends "unfold/layouts/base_simple.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}{% endblock %}
+
+{% block content %}
+<div dir="rtl" class="flex flex-col gap-6 py-4 px-2">
+
+  <h1 class="text-2xl font-bold text-gray-900 dark:text-white">لوحة التحكم</h1>
+
+  <!-- ── Row 1: Core KPIs ───────────────────────────────────────────────────── -->
+  <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+
+    <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">المستخدمون</p>
+      <p class="mt-2 text-4xl font-extrabold text-gray-900 dark:text-white">{{ stat_users_total }}</p>
+      <p class="mt-1 text-xs text-gray-400">{{ stat_users_individual }} فرد · {{ stat_users_business }} منشأة</p>
+    </div>
+
+    <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">المنتجات النشطة</p>
+      <p class="mt-2 text-4xl font-extrabold text-gray-900 dark:text-white">{{ stat_products }}</p>
+      <p class="mt-1 text-xs text-gray-400">منتج مسجّل وموثّق</p>
+    </div>
+
+    <div class="rounded-xl border border-yellow-200 bg-yellow-50 p-5 dark:border-yellow-700 dark:bg-yellow-900/20">
+      <p class="text-xs font-semibold uppercase tracking-wide text-yellow-700 dark:text-yellow-400">معاملات معلّقة</p>
+      <p class="mt-2 text-4xl font-extrabold text-yellow-700 dark:text-yellow-300">{{ stat_pending_transactions }}</p>
+      <p class="mt-1 text-xs text-yellow-600 dark:text-yellow-500">بانتظار قبول الطرف الآخر</p>
+    </div>
+
+    <div class="rounded-xl border border-red-200 bg-red-50 p-5 dark:border-red-700 dark:bg-red-900/20">
+      <p class="text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-400">تنبيهات مفتوحة</p>
+      <p class="mt-2 text-4xl font-extrabold text-red-700 dark:text-red-300">{{ stat_open_alerts }}</p>
+      <p class="mt-1 text-xs text-red-600 dark:text-red-500">{{ stat_critical_alerts }} حرجة تتطلب تدخلاً فورياً</p>
+    </div>
+
+  </div>
+
+  <!-- ── Row 2: Secondary stats ─────────────────────────────────────────────── -->
+  <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+
+    <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">موثّقون</p>
+      <p class="mt-2 text-4xl font-extrabold text-green-600 dark:text-green-400">{{ stat_verified_users }}</p>
+      <p class="mt-1 text-xs text-gray-400">من أصل {{ stat_users_total }} مستخدم</p>
+    </div>
+
+    <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">معاملات مكتملة</p>
+      <p class="mt-2 text-4xl font-extrabold text-gray-900 dark:text-white">{{ stat_approved_transactions }}</p>
+      <p class="mt-1 text-xs text-gray-400">نقل ملكية موثّق</p>
+    </div>
+
+    <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">الشهادات</p>
+      <p class="mt-2 text-4xl font-extrabold text-blue-600 dark:text-blue-400">{{ stat_valid_certificates }}</p>
+      <p class="mt-1 text-xs text-gray-400">شهادة صالحة ونشطة</p>
+    </div>
+
+    <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">تنبيهات حرجة</p>
+      <p class="mt-2 text-4xl font-extrabold {% if stat_critical_alerts > 0 %}text-red-600 dark:text-red-400{% else %}text-gray-900 dark:text-white{% endif %}">{{ stat_critical_alerts }}</p>
+      <p class="mt-1 text-xs text-gray-400">خطورة قصوى</p>
+    </div>
+
+  </div>
+
+  <!-- ── Tables row ─────────────────────────────────────────────────────────── -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+    <!-- Recent Transactions -->
+    <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
+      <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-5 py-3">
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-white">آخر المعاملات</h2>
+        <a href="{% url 'admin:transactions_transaction_changelist' %}"
+           class="text-xs text-blue-600 dark:text-blue-400 hover:underline">عرض الكل</a>
+      </div>
+      {% if recent_transactions %}
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 dark:bg-gray-700">
+          <tr>
+            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">المنتج</th>
+            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">الحالة</th>
+            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">التاريخ</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+          {% for txn in recent_transactions %}
+          <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+            <td class="px-4 py-2 font-medium text-gray-900 dark:text-white">
+              {{ txn.product.brand }} {{ txn.product.model }}
+            </td>
+            <td class="px-4 py-2">
+              <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+                {% if txn.status == 'approved' %}bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300
+                {% elif txn.status == 'pending' %}bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300
+                {% else %}bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300{% endif %}">
+                {{ txn.get_status_display }}
+              </span>
+            </td>
+            <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ txn.created_at|date:"Y/m/d" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="px-5 py-6 text-center text-sm text-gray-400">لا توجد معاملات بعد</p>
+      {% endif %}
+    </div>
+
+    <!-- Open Fraud Alerts -->
+    <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
+      <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-5 py-3">
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-white">تنبيهات الاحتيال المفتوحة</h2>
+        <a href="{% url 'admin:fraud_fraudalert_changelist' %}"
+           class="text-xs text-blue-600 dark:text-blue-400 hover:underline">عرض الكل</a>
+      </div>
+      {% if recent_alerts %}
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 dark:bg-gray-700">
+          <tr>
+            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">النوع</th>
+            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">الخطورة</th>
+            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">التاريخ</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+          {% for alert in recent_alerts %}
+          <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+            <td class="px-4 py-2 font-medium text-gray-900 dark:text-white">{{ alert.get_alert_type_display }}</td>
+            <td class="px-4 py-2">
+              <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+                {% if alert.severity == 'critical' %}bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300
+                {% elif alert.severity == 'high' %}bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300
+                {% elif alert.severity == 'medium' %}bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300
+                {% else %}bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300{% endif %}">
+                {{ alert.get_severity_display }}
+              </span>
+            </td>
+            <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ alert.created_at|date:"Y/m/d" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="px-5 py-6 text-center text-sm text-gray-400">لا توجد تنبيهات مفتوحة</p>
+      {% endif %}
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

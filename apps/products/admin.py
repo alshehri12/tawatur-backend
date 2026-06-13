@@ -1,8 +1,9 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin, TabularInline
 from .models import Product, OwnershipRecord
 
 
-class OwnershipRecordInline(admin.TabularInline):
+class OwnershipRecordInline(TabularInline):
     model = OwnershipRecord
     extra = 0
     readonly_fields = ['id', 'owner', 'start_date', 'end_date', 'transfer_type', 'is_current']
@@ -10,7 +11,7 @@ class OwnershipRecordInline(admin.TabularInline):
 
 
 @admin.register(Product)
-class ProductAdmin(admin.ModelAdmin):
+class ProductAdmin(ModelAdmin):
     list_display = [
         'id', 'category', 'brand', 'model', 'condition',
         'trust_score', 'trust_level', 'registered_by', 'registered_at', 'is_active',
@@ -44,7 +45,7 @@ class ProductAdmin(admin.ModelAdmin):
 
 
 @admin.register(OwnershipRecord)
-class OwnershipRecordAdmin(admin.ModelAdmin):
+class OwnershipRecordAdmin(ModelAdmin):
     list_display = ['id', 'product', 'owner', 'transfer_type', 'is_current', 'start_date', 'end_date']
     list_filter = ['transfer_type', 'is_current']
     search_fields = ['product__id', 'owner__phone_hash']

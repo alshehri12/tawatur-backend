@@ -1,9 +1,10 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 from .models import Certificate
 
 
 @admin.register(Certificate)
-class CertificateAdmin(admin.ModelAdmin):
+class CertificateAdmin(ModelAdmin):
     list_display = [
         'certificate_number', 'certificate_type', 'product',
         'owner', 'is_valid', 'issued_at',

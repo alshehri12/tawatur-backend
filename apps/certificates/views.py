@@ -30,7 +30,7 @@ class MyCertificatesView(APIView):
 
     def get(self, request):
         certs = Certificate.objects.filter(owner=request.user).select_related('product')
-        return Response(CertificateSerializer(certs, many=True).data)
+        return Response(CertificateSerializer(certs, many=True, context={'request': request}).data)
 
 
 class GenerateCertificateView(APIView):
@@ -61,7 +61,7 @@ class GenerateCertificateView(APIView):
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
 
         return Response(
-            CertificateSerializer(cert).data,
+            CertificateSerializer(cert, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -76,7 +76,7 @@ class CertificateDetailView(APIView):
         except Certificate.DoesNotExist:
             return Response({'detail': 'الشهادة غير موجودة.'}, status=status.HTTP_404_NOT_FOUND)
 
-        return Response(CertificateSerializer(cert).data)
+        return Response(CertificateSerializer(cert, context={'request': request}).data)
 
 
 class CertificatePDFView(APIView):

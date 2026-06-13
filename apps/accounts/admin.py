@@ -1,23 +1,24 @@
-"""
-Django Admin registration for the accounts app.
-Admins can search users, view verification status, and manually
-flip absher_verified / wathiq_verified (simulating real gov. confirmation).
-"""
-
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from unfold.admin import ModelAdmin
 from .models import User, OTPVerification
 
 
 @admin.register(User)
-class UserAdmin(BaseUserAdmin):
-    # Columns shown in the list view
+class UserAdmin(ModelAdmin, BaseUserAdmin):
     list_display = [
-        'id', 'user_type', 'business_name',
+        'id', 'get_phone_number', 'user_type', 'business_name',
         'identity_submitted', 'absher_verified',
         'cr_submitted', 'wathiq_verified',
         'is_active', 'is_staff', 'date_joined',
     ]
+
+    @admin.display(description='رقم الجوال')
+    def get_phone_number(self, obj):
+        try:
+            return obj.phone_number
+        except Exception:
+            return '—'
     list_filter = [
         'user_type', 'identity_submitted', 'absher_verified',
         'cr_submitted', 'wathiq_verified', 'is_active',
@@ -26,7 +27,6 @@ class UserAdmin(BaseUserAdmin):
     ordering = ['-date_joined']
     readonly_fields = ['id', 'phone_hash', 'phone_number_encrypted', 'date_joined', 'device_fingerprint_hash']
 
-    # Override default UserAdmin fieldsets (which expect 'username' / 'email')
     fieldsets = (
         ('الهوية', {
             'fields': ('id', 'phone_hash', 'phone_number_encrypted', 'user_type'),
@@ -51,7 +51,6 @@ class UserAdmin(BaseUserAdmin):
         }),
     )
 
-    # Fieldsets used when creating a new user from the admin
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
@@ -61,7 +60,7 @@ class UserAdmin(BaseUserAdmin):
 
 
 @admin.register(OTPVerification)
-class OTPVerificationAdmin(admin.ModelAdmin):
+class OTPVerificationAdmin(ModelAdmin):
     list_display = ['id', 'purpose', 'attempts', 'is_used', 'expires_at', 'created_at']
     list_filter = ['purpose', 'is_used']
     search_fields = ['phone_hash']

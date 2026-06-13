@@ -4,9 +4,22 @@ from .models import Certificate
 
 class CertificateSerializer(serializers.ModelSerializer):
     certificate_type_display = serializers.CharField(source='get_certificate_type_display', read_only=True)
-    pdf_url = serializers.CharField(read_only=True)
-    qr_code_url = serializers.CharField(read_only=True)
+    pdf_url = serializers.SerializerMethodField()
+    qr_code_url = serializers.SerializerMethodField()
     product_summary = serializers.SerializerMethodField()
+
+    def _absolute(self, path: str) -> str:
+        if not path:
+            return ''
+        request = self.context.get('request')
+        url = f'/media/{path}'
+        return request.build_absolute_uri(url) if request else url
+
+    def get_pdf_url(self, obj):
+        return self._absolute(obj.pdf_path)
+
+    def get_qr_code_url(self, obj):
+        return self._absolute(obj.qr_code_path)
 
     class Meta:
         model = Certificate
