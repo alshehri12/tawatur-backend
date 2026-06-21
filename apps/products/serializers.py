@@ -28,10 +28,11 @@ class CreateProductSerializer(serializers.Serializer):
     )
 
     # Optional — at least one identifier is strongly recommended but not enforced
-    imei_1 = serializers.CharField(max_length=15, required=False, allow_blank=True)
-    imei_2 = serializers.CharField(max_length=15, required=False, allow_blank=True)
-    serial_number = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    imei_1         = serializers.CharField(max_length=15,   required=False, allow_blank=True)
+    imei_2         = serializers.CharField(max_length=15,   required=False, allow_blank=True)
+    serial_number  = serializers.CharField(max_length=50,   required=False, allow_blank=True)
+    notes          = serializers.CharField(max_length=500,  required=False, allow_blank=True)
+    purchase_terms = serializers.CharField(max_length=2000, required=False, allow_blank=True)
 
     def validate_imei_1(self, value):
         if value and (not value.isdigit() or len(value) not in (14, 15)):
@@ -97,7 +98,7 @@ class ProductOwnerSerializer(ProductPublicSerializer):
 
     class Meta(ProductPublicSerializer.Meta):
         fields = ProductPublicSerializer.Meta.fields + [
-            'imei_1', 'imei_2', 'serial_number', 'notes',
+            'imei_1', 'imei_2', 'serial_number', 'notes', 'purchase_terms',
         ]
 
     def get_imei_1(self, obj):
@@ -131,7 +132,7 @@ class OwnershipRecordPublicSerializer(serializers.ModelSerializer):
         ]
 
     def get_owner_verified(self, obj):
-        return obj.owner.identity_submitted
+        return obj.owner.can_transact
 
 
 class OwnershipHistorySummarySerializer(serializers.Serializer):

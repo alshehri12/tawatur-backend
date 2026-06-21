@@ -14,6 +14,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.db.models import Q
 
 from apps.accounts.permissions import IsVerifiedUser
 from .models import Product, OwnershipRecord
@@ -184,7 +185,9 @@ class OwnershipHistoryView(APIView):
             'first_recorded_date': first_record.start_date if first_record else None,
             'latest_transfer_date': last_record.start_date if last_record else None,
             'chain_integrity': product.chain_integrity,
-            'verified_transfer_count': records.filter(owner__identity_submitted=True).count(),
+            'verified_transfer_count': records.filter(
+                Q(owner__identity_submitted=True) | Q(owner__cr_submitted=True)
+            ).count(),
             'trust_score': product.trust_score,
             'trust_level': product.trust_level,
             'trust_level_display': trust_level_labels.get(product.trust_level, ''),
@@ -213,7 +216,9 @@ class TrustScoreView(APIView):
             return Response({'detail': 'المنتج غير موجود.'}, status=status.HTTP_404_NOT_FOUND)
 
         records = product.ownership_records.select_related('owner').all()
-        verified_count = records.filter(owner__identity_submitted=True).count()
+        verified_count = records.filter(
+            Q(owner__identity_submitted=True) | Q(owner__cr_submitted=True)
+        ).count()
 
         from apps.fraud.models import FraudAlert
         active_alerts = FraudAlert.objects.filter(product=product, status=FraudAlert.OPEN).count()

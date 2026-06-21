@@ -234,12 +234,22 @@ def _draw_pdf(cert_number: str, cert_type_label: str, product,
         ('الحالة',  product.get_condition_display()),
     ]
     if transaction:
+        from apps.transactions.models import Transaction as TxnModel
         rows.append(('نوع المعاملة', transaction.get_transaction_type_display()))
         if transaction.price:
-            rows.append(('قيمة المعاملة', f'{transaction.price} ريال سعودي'))
+            rows.append(('قيمة الصفقة', f'{transaction.price} ريال سعودي'))
         if transaction.approved_at:
             rows.append(('تاريخ التوثيق',
                          transaction.approved_at.strftime('%Y/%m/%d  %H:%M')))
+        if transaction.transaction_type == TxnModel.DIRECT_PURCHASE:
+            if transaction.seller_full_name:
+                rows.append(('اسم البائع',     transaction.seller_full_name))
+            if transaction.seller_id_number:
+                rows.append(('هوية البائع',    transaction.seller_id_number))
+            if transaction.seller_mobile:
+                rows.append(('جوال البائع',    transaction.seller_mobile))
+            if transaction.seller_city:
+                rows.append(('مدينة البائع',   transaction.seller_city))
 
     trust_map = {'excellent': 'ممتاز', 'high': 'عالٍ', 'medium': 'متوسط', 'low': 'منخفض'}
     trust_ar  = trust_map.get(product.trust_level, product.trust_level)
@@ -355,20 +365,29 @@ class CertificateService:
 
         qr_path = _generate_qr(verification_url, cert_number)
 
+        from .models import Certificate as CertModel
+        from apps.transactions.models import Transaction as TxnModel
+        is_direct = transaction.transaction_type == TxnModel.DIRECT_PURCHASE
+        cert_label = 'عقد شراء مباشر' if is_direct else 'شهادة نقل ملكية'
+
         pdf_path = _draw_pdf(
             cert_number=cert_number,
-            cert_type_label='شهادة نقل ملكية',
+            cert_type_label=cert_label,
             product=transaction.product,
             qr_path=qr_path,
             verification_url=verification_url,
             transaction=transaction,
         )
 
+        # For direct purchases the buyer (initiator) is the new owner;
+        # for legacy link-based transfers the recipient is the new owner.
+        cert_owner = transaction.initiator if is_direct else transaction.recipient
+
         cert = Certificate.objects.create(
             certificate_number=cert_number,
             transaction=transaction,
             product=transaction.product,
-            owner=transaction.recipient,
+            owner=cert_owner,
             certificate_type=Certificate.OWNERSHIP_TRANSFER,
             qr_code_path=qr_path,
             pdf_path=pdf_path,

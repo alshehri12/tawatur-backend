@@ -7,6 +7,7 @@ Business logic services for the products domain.
 """
 
 from django.db import transaction as db_transaction
+from django.db.models import Q
 
 
 class TrustScoreService:
@@ -41,10 +42,13 @@ class TrustScoreService:
 
         score = 50  # base score every product starts with
 
-        # Count ownership records belonging to identity-verified users
+        # Count ownership records belonging to users who submitted the
+        # verification data required for their account type.
         records = product.ownership_records.select_related('owner').all()
         verified_count = min(
-            records.filter(owner__identity_submitted=True).count(),
+            records.filter(
+                Q(owner__identity_submitted=True) | Q(owner__cr_submitted=True)
+            ).count(),
             3,  # cap bonus at 3 transfers = +30 max
         )
         score += verified_count * 10

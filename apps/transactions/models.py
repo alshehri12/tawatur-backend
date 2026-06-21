@@ -1,12 +1,9 @@
 """
 Transactions domain model.
 
-A Transaction represents a request to transfer ownership of a product
-from one user (initiator) to another (recipient). The recipient reviews
-the request via a shareable link and either approves or rejects it.
-
-Views, services, and URLs for this app are built in Phase 3.
-The model is defined here so that the OwnershipRecord FK resolves cleanly.
+A Transaction records a direct purchase: the buyer (initiator) registers
+the product they bought, then documents the seller's info to complete the
+ownership transfer. No link-sharing or approval step — completed immediately.
 """
 
 import uuid
@@ -17,29 +14,40 @@ from django.conf import settings
 class Transaction(models.Model):
 
     # ── Transaction type ──────────────────────────────────────────────────────
+    DIRECT_PURCHASE          = 'direct_purchase'
+    # Legacy types — kept so existing DB rows are still valid
     INDIVIDUAL_TO_INDIVIDUAL = 'individual_to_individual'
-    BUSINESS_PURCHASE = 'business_purchase'
-    BUSINESS_SALE = 'business_sale'
+    BUSINESS_PURCHASE        = 'business_purchase'
+    BUSINESS_SALE            = 'business_sale'
 
     TRANSACTION_TYPE_CHOICES = [
+        (DIRECT_PURCHASE,          'شراء مباشر'),
         (INDIVIDUAL_TO_INDIVIDUAL, 'بين أفراد'),
-        (BUSINESS_PURCHASE, 'شراء منشأة'),
-        (BUSINESS_SALE, 'بيع منشأة'),
+        (BUSINESS_PURCHASE,        'شراء منشأة'),
+        (BUSINESS_SALE,            'بيع منشأة'),
     ]
 
     # ── Status ────────────────────────────────────────────────────────────────
-    PENDING = 'pending'
-    APPROVED = 'approved'
-    REJECTED = 'rejected'
+    PENDING   = 'pending'
+    APPROVED  = 'approved'
+    REJECTED  = 'rejected'
     CANCELLED = 'cancelled'
-    EXPIRED = 'expired'
+    EXPIRED   = 'expired'
 
     STATUS_CHOICES = [
-        (PENDING, 'بانتظار الموافقة'),
-        (APPROVED, 'مكتملة'),
-        (REJECTED, 'مرفوضة'),
+        (PENDING,   'بانتظار الموافقة'),
+        (APPROVED,  'مكتملة'),
+        (REJECTED,  'مرفوضة'),
         (CANCELLED, 'ملغاة'),
-        (EXPIRED, 'منتهية الصلاحية'),
+        (EXPIRED,   'منتهية الصلاحية'),
+    ]
+
+    # ── Device condition ──────────────────────────────────────────────────────
+    CONDITION_NEW  = 'new'
+    CONDITION_USED = 'used'
+    DEVICE_CONDITION_CHOICES = [
+        (CONDITION_NEW,  'جديد'),
+        (CONDITION_USED, 'مستعمل'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -54,27 +62,39 @@ class Transaction(models.Model):
         on_delete=models.PROTECT,
         related_name='initiated_transactions',
     )
+    # Null for DIRECT_PURCHASE — the seller is not a platform user.
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='received_transactions',
+        null=True, blank=True,
     )
 
     transaction_type = models.CharField(
         max_length=30, choices=TRANSACTION_TYPE_CHOICES,
-        default=INDIVIDUAL_TO_INDIVIDUAL,
+        default=DIRECT_PURCHASE,
     )
 
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    device_condition = models.CharField(
+        max_length=10, choices=DEVICE_CONDITION_CHOICES, blank=True, default='',
+    )
+    seller_terms = models.TextField(blank=True, default='')
     notes = models.TextField(blank=True, default='')
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default=PENDING)
 
-    # UUID used as the shareable link token (tawatur://transaction/{link_token})
+    # ── Direct-purchase seller info ───────────────────────────────────────────
+    # The seller is not a registered user; their details are entered by the buyer.
+    seller_full_name         = models.CharField(max_length=200, blank=True, default='')
+    seller_id_number_encrypted = models.TextField(blank=True, default='')   # Saudi ID / Iqama
+    seller_mobile_encrypted  = models.TextField(blank=True, default='')
+    seller_city              = models.CharField(max_length=100, blank=True, default='')
+
     link_token = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)
     expires_at = models.DateTimeField()
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
     approved_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -90,12 +110,24 @@ class Transaction(models.Model):
     def __str__(self):
         return f'معاملة {self.get_transaction_type_display()} — {self.status}'
 
+    # ── Decrypted seller info (only used server-side, e.g. in PDF) ────────────
+    @property
+    def seller_id_number(self) -> str:
+        if not self.seller_id_number_encrypted:
+            return ''
+        from core.encryption import decrypt
+        return decrypt(self.seller_id_number_encrypted)
+
+    @property
+    def seller_mobile(self) -> str:
+        if not self.seller_mobile_encrypted:
+            return ''
+        from core.encryption import decrypt
+        return decrypt(self.seller_mobile_encrypted)
+
 
 class AuditLog(models.Model):
-    """
-    Immutable log of every status change on a transaction.
-    Written by TransactionService — never updated or deleted.
-    """
+    """Immutable log of every status change on a transaction."""
     transaction = models.ForeignKey(
         Transaction,
         on_delete=models.CASCADE,
@@ -106,7 +138,7 @@ class AuditLog(models.Model):
         on_delete=models.PROTECT,
         related_name='audit_logs',
     )
-    action = models.CharField(max_length=50)       # e.g. 'created', 'approved', 'rejected'
+    action = models.CharField(max_length=50)
     old_status = models.CharField(max_length=15, blank=True)
     new_status = models.CharField(max_length=15, blank=True)
     ip_hash = models.CharField(max_length=64, blank=True)

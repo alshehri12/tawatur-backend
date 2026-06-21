@@ -7,6 +7,7 @@ Products domain models:
 import uuid
 from django.db import models
 from django.conf import settings
+from django.db.models import Q
 
 
 class Product(models.Model):
@@ -39,18 +40,21 @@ class Product(models.Model):
     ]
 
     # ── Condition choices ─────────────────────────────────────────────────────
-    CONDITION_NEW = 'new'
+    CONDITION_NEW  = 'new'
+    CONDITION_USED = 'used'
+    # Legacy values — kept for existing records, not exposed in the app UI
     CONDITION_EXCELLENT = 'excellent'
     CONDITION_GOOD = 'good'
     CONDITION_FAIR = 'fair'
     CONDITION_POOR = 'poor'
 
     CONDITION_CHOICES = [
-        (CONDITION_NEW, 'جديد'),
+        (CONDITION_NEW,       'جديد'),
+        (CONDITION_USED,      'مستعمل'),
         (CONDITION_EXCELLENT, 'ممتاز'),
-        (CONDITION_GOOD, 'جيد'),
-        (CONDITION_FAIR, 'مقبول'),
-        (CONDITION_POOR, 'ضعيف'),
+        (CONDITION_GOOD,      'جيد'),
+        (CONDITION_FAIR,      'مقبول'),
+        (CONDITION_POOR,      'ضعيف'),
     ]
 
     # ── Trust level choices ───────────────────────────────────────────────────
@@ -74,6 +78,7 @@ class Product(models.Model):
     model = models.CharField(max_length=100)        # e.g. "iPhone 16 Pro"
     condition = models.CharField(max_length=15, choices=CONDITION_CHOICES)
     notes = models.TextField(blank=True, default='')
+    purchase_terms = models.TextField(blank=True, default='')
 
     # ── IMEI 1 (primary SIM slot) ─────────────────────────────────────────────
     imei_1_encrypted = models.TextField(blank=True, default='')
@@ -138,14 +143,17 @@ class Product(models.Model):
     @property
     def chain_integrity(self) -> int:
         """
-        Percentage of ownership records belonging to verified users.
+        Percentage of ownership records belonging to users who submitted
+        the verification data required for their account type.
         100% = every owner in the chain has submitted identity verification.
         """
         records = self.ownership_records.all()
         total = records.count()
         if total == 0:
             return 0
-        verified = records.filter(owner__identity_submitted=True).count()
+        verified = records.filter(
+            Q(owner__identity_submitted=True) | Q(owner__cr_submitted=True)
+        ).count()
         return int((verified / total) * 100)
 
 

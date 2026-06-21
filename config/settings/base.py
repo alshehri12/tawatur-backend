@@ -18,6 +18,9 @@ SECRET_KEY = config('SECRET_KEY')
 # Fernet key used to encrypt sensitive fields (IMEI, serial, phone, national ID)
 ENCRYPTION_KEY = config('ENCRYPTION_KEY')
 
+# Public backend URL used in generated certificate verification links.
+SITE_URL = config('SITE_URL', default='http://127.0.0.1:8000')
+
 # ── Application Definition ────────────────────────────────────────────────────
 INSTALLED_APPS = [
     # Unfold must come BEFORE django.contrib.admin to override its templates

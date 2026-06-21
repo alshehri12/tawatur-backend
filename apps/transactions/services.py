@@ -18,72 +18,100 @@ from .models import Transaction, AuditLog
 
 class TransactionService:
 
-    # ── Create ────────────────────────────────────────────────────────────────
+    # ── Direct purchase (buyer-initiated) ────────────────────────────────────
 
     @staticmethod
     @db_transaction.atomic
-    def create(initiator, product_id: str, recipient_phone: str,
-               transaction_type: str, price=None, notes: str = '') -> Transaction:
+    def create_direct_purchase(
+        buyer,
+        product_id: str,
+        seller_full_name: str,
+        seller_id_number: str,
+        seller_mobile: str,
+        seller_city: str,
+        price=None,
+        device_condition: str = '',
+        seller_terms: str = '',
+        notes: str = '',
+    ) -> Transaction:
         """
-        Open a new ownership transfer request.
-
-        Rules enforced:
-          - Initiator must be the current owner of the product.
-          - Recipient must exist, be verified, and differ from the initiator.
-          - No other PENDING transaction may exist for the same product.
+        Record a completed direct purchase:
+          - Buyer must be the registered owner of the product.
+          - Seller info (name, ID, mobile, city) is entered by the buyer.
+          - Transaction is immediately APPROVED — no link or approval step.
+          - A certificate is generated automatically.
         """
-        from core.hashing import hash_phone
-        from apps.accounts.models import User
+        from core.encryption import encrypt
         from apps.products.models import Product, OwnershipRecord
 
-        # ── Validate product + ownership ──────────────────────────────────────
         try:
             product = Product.objects.get(id=product_id, is_active=True)
         except Product.DoesNotExist:
             raise ValueError('المنتج غير موجود أو غير نشط.')
 
-        owns_product = OwnershipRecord.objects.filter(
-            product=product, owner=initiator, is_current=True
-        ).exists()
-        if not owns_product:
-            raise ValueError('لا يمكنك تحويل منتج لا تمتلكه.')
+        if not OwnershipRecord.objects.filter(
+            product=product, owner=buyer, is_current=True
+        ).exists():
+            raise ValueError('لا يمكنك توثيق شراء منتج لا تمتلكه.')
 
-        # ── Prevent duplicate pending transactions ────────────────────────────
-        if Transaction.objects.filter(product=product, status=Transaction.PENDING).exists():
-            raise ValueError('يوجد طلب تحويل نشط لهذا المنتج. أكمله أو ألغِه أولاً.')
+        if Transaction.objects.filter(
+            product=product, status=Transaction.PENDING
+        ).exists():
+            raise ValueError('يوجد معاملة معلّقة لهذا المنتج، أكملها أو ألغِها أولاً.')
 
-        # ── Resolve recipient ─────────────────────────────────────────────────
-        try:
-            recipient = User.objects.get(phone_hash=hash_phone(recipient_phone), is_active=True)
-        except User.DoesNotExist:
-            raise ValueError('لا يوجد مستخدم مسجل بهذا الرقم على تواتر.')
+        now = timezone.now()
 
-        if recipient == initiator:
-            raise ValueError('لا يمكنك تحويل المنتج إلى نفسك.')
-
-        if not recipient.can_transact:
-            raise ValueError('المستخدم المُحوَّل إليه لم يُكمل التحقق من هويته على المنصة.')
-
-        # ── Create transaction (expires in 48 hours) ──────────────────────────
         txn = Transaction.objects.create(
             product=product,
-            initiator=initiator,
-            recipient=recipient,
-            transaction_type=transaction_type,
+            initiator=buyer,
+            recipient=None,
+            transaction_type=Transaction.DIRECT_PURCHASE,
             price=price,
+            device_condition=device_condition,
+            seller_terms=seller_terms,
             notes=notes,
-            status=Transaction.PENDING,
-            expires_at=timezone.now() + timedelta(hours=48),
+            seller_full_name=seller_full_name,
+            seller_id_number_encrypted=encrypt(seller_id_number),
+            seller_mobile_encrypted=encrypt(seller_mobile),
+            seller_city=seller_city,
+            status=Transaction.APPROVED,
+            expires_at=now + timedelta(hours=48),
+            approved_at=now,
         )
 
-        # Immutable audit trail entry
         AuditLog.objects.create(
             transaction=txn,
-            actor=initiator,
-            action='created',
+            actor=buyer,
+            action='direct_purchase_completed',
             old_status='',
-            new_status=Transaction.PENDING,
+            new_status=Transaction.APPROVED,
         )
+
+        # Schedule certificate generation AFTER the DB commit so it never
+        # blocks the HTTP response. A daemon thread handles the actual work.
+        _txn_id = str(txn.id)
+
+        def _generate_cert_after_commit():
+            import threading
+
+            def _bg():
+                try:
+                    from apps.certificates.tasks import generate_transfer_certificate_task
+                    generate_transfer_certificate_task.delay(_txn_id)
+                    return
+                except Exception:
+                    pass
+                try:
+                    from apps.certificates.services import CertificateService
+                    from apps.transactions.models import Transaction as _T
+                    t = _T.objects.select_related('product', 'initiator').get(id=_txn_id)
+                    CertificateService.generate_transfer_certificate(t)
+                except Exception:
+                    pass
+
+            threading.Thread(target=_bg, daemon=True).start()
+
+        db_transaction.on_commit(_generate_cert_after_commit)
 
         return txn
 

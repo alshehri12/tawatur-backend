@@ -3,12 +3,31 @@ Development settings. Extends base.py with local-only overrides.
 Never use these settings in production.
 """
 
+import socket
 from .base import *
-from decouple import config
+from decouple import Csv, config
 
-DEBUG = True
+_debug_value = config('DEBUG', default='True').strip().lower()
+DEBUG = _debug_value not in {'0', 'false', 'no', 'off', 'prod', 'production', 'release'}
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '192.168.100.8', 'Abdulrahmans-Mac-Studio.local']
+ALLOWED_HOSTS = config(
+    'ALLOWED_HOSTS',
+    default='localhost,127.0.0.1,0.0.0.0,Abdulrahmans-Mac-Studio.local',
+    cast=Csv(),
+)
+
+# Always append the machine's current LAN IP so the iOS device on the same Wi-Fi
+# can reach the server without editing .env every time DHCP reassigns an address.
+# Uses a UDP connect trick (no data sent) to find the outbound interface IP.
+try:
+    _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    _s.connect(('8.8.8.8', 80))
+    _lan_ip = _s.getsockname()[0]
+    _s.close()
+    if _lan_ip and not _lan_ip.startswith('127.') and _lan_ip not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS = list(ALLOWED_HOSTS) + [_lan_ip]
+except Exception:
+    pass
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Set USE_POSTGRES=True in .env once PostgreSQL is installed and running.
