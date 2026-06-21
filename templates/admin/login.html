@@ -1,0 +1,282 @@
+{% load i18n static %}
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>تواتر — لوحة الإدارة</title>
+
+  <!-- Tailwind CDN (same Unfold uses internally) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts — IBM Plex Sans Arabic -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    * { font-family: 'IBM Plex Sans Arabic', sans-serif; box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0d1f3c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* ── Decorative background ──────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 110% 10%, rgba(201,168,76,.18) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at -10% 90%, rgba(26,58,107,.8) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    /* Grid pattern overlay */
+    body::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(201,168,76,.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(201,168,76,.06) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+    }
+
+    /* ── Card ───────────────────────────────────────────────────────── */
+    .login-card {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      max-width: 420px;
+      margin: 24px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(201,168,76,.25);
+      border-radius: 20px;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,.04) inset,
+        0 32px 80px rgba(0,0,0,.5),
+        0 0 60px rgba(201,168,76,.08);
+      overflow: hidden;
+    }
+
+    /* Gold top accent line */
+    .login-card::before {
+      content: '';
+      display: block;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #c9a84c, #e8c96a, #c9a84c, transparent);
+    }
+
+    .card-body { padding: 40px 36px 36px; }
+
+    /* ── Logo ───────────────────────────────────────────────────────── */
+    .logo-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+    .logo-wrap img {
+      width: 120px;
+      height: 120px;
+      object-fit: contain;
+      /* Make white background transparent-ish on the dark card */
+      border-radius: 16px;
+      background: rgba(255,255,255,.92);
+      padding: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.3);
+    }
+    .tagline {
+      margin-top: 12px;
+      font-size: 12px;
+      font-weight: 400;
+      letter-spacing: .06em;
+      color: rgba(201,168,76,.75);
+    }
+
+    /* ── Section title ──────────────────────────────────────────────── */
+    .section-title {
+      text-align: center;
+      font-size: 15px;
+      font-weight: 600;
+      color: rgba(255,255,255,.55);
+      margin-bottom: 28px;
+      letter-spacing: .04em;
+    }
+
+    /* ── Error / info banners ───────────────────────────────────────── */
+    .errornote {
+      background: rgba(239,68,68,.12);
+      border: 1px solid rgba(239,68,68,.35);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      color: #fca5a5;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    /* ── Form fields ────────────────────────────────────────────────── */
+    .field-row { margin-bottom: 18px; }
+
+    .field-row label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255,255,255,.5);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .field-row input {
+      width: 100%;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 10px;
+      padding: 13px 16px;
+      color: #fff;
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s, background .2s;
+      direction: ltr;
+    }
+    .field-row input:focus {
+      border-color: rgba(201,168,76,.6);
+      background: rgba(255,255,255,.09);
+      box-shadow: 0 0 0 3px rgba(201,168,76,.12);
+    }
+    .field-row input::placeholder { color: rgba(255,255,255,.25); }
+
+    /* ── Submit button ──────────────────────────────────────────────── */
+    .btn-login {
+      width: 100%;
+      margin-top: 8px;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #c9a84c 0%, #e8c96a 50%, #c9a84c 100%);
+      background-size: 200% 100%;
+      color: #1A3A6B;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      letter-spacing: .04em;
+      transition: background-position .4s, box-shadow .2s, transform .1s;
+      box-shadow: 0 4px 20px rgba(201,168,76,.3);
+    }
+    .btn-login:hover {
+      background-position: right center;
+      box-shadow: 0 6px 28px rgba(201,168,76,.45);
+    }
+    .btn-login:active { transform: scale(.98); }
+
+    /* ── Footer note ────────────────────────────────────────────────── */
+    .footer-note {
+      margin-top: 28px;
+      text-align: center;
+      font-size: 11px;
+      color: rgba(255,255,255,.2);
+      letter-spacing: .04em;
+    }
+
+    /* ── Floating circles decoration ────────────────────────────────── */
+    .circle {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .circle-1 {
+      width: 320px; height: 320px;
+      top: -120px; left: -100px;
+      background: radial-gradient(circle, rgba(201,168,76,.12), transparent 70%);
+    }
+    .circle-2 {
+      width: 200px; height: 200px;
+      bottom: -60px; right: -60px;
+      background: radial-gradient(circle, rgba(26,58,107,.6), transparent 70%);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="circle circle-1"></div>
+  <div class="circle circle-2"></div>
+
+  <div class="login-card">
+    <div class="card-body">
+
+      <!-- Logo -->
+      <div class="logo-wrap">
+        <img src="{% static 'tawatur/images/logo.png' %}" alt="تواتر" />
+        <span class="tagline">توثيق الآن، ثقة تدوم</span>
+      </div>
+
+      <p class="section-title">لوحة الإدارة</p>
+
+      <!-- Error messages -->
+      {% if form.errors %}
+      <div class="errornote">
+        بيانات الدخول غير صحيحة. يرجى المحاولة مرة أخرى.
+      </div>
+      {% endif %}
+
+      {% if error_message %}
+      <div class="errornote">{{ error_message }}</div>
+      {% endif %}
+
+      <!-- Login form -->
+      <form method="post" action="{{ app_path }}" id="login-form">
+        {% csrf_token %}
+
+        <div class="field-row">
+          <label for="id_username">اسم المستخدم</label>
+          <input
+            type="text"
+            id="id_username"
+            name="username"
+            placeholder="viewer-admin"
+            autocomplete="username"
+            autofocus
+            required
+          />
+        </div>
+
+        <div class="field-row">
+          <label for="id_password">كلمة المرور</label>
+          <input
+            type="password"
+            id="id_password"
+            name="password"
+            placeholder="••••••••"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+
+        {% if next %}
+        <input type="hidden" name="next" value="{{ next }}" />
+        {% endif %}
+
+        <button type="submit" class="btn-login">دخول</button>
+      </form>
+
+      <p class="footer-note">منصة تواتر لتوثيق الملكية · النظام الداخلي</p>
+
+    </div>
+  </div>
+
+</body>
+</html>
