@@ -28,7 +28,7 @@ class ProductAdmin(ModelAdmin):
 
     fieldsets = (
         ('تفاصيل المنتج', {
-            'fields': ('id', 'category', 'brand', 'model', 'condition', 'notes'),
+            'fields': ('id', 'category', 'brand', 'model', 'condition', 'notes', 'purchase_terms'),
         }),
         ('المعرّفات (مشفرة)', {
             'fields': (

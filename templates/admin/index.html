@@ -23,10 +23,10 @@
       <p class="mt-1 text-xs text-gray-400">منتج مسجّل وموثّق</p>
     </div>
 
-    <div class="rounded-xl border border-yellow-200 bg-yellow-50 p-5 dark:border-yellow-700 dark:bg-yellow-900/20">
-      <p class="text-xs font-semibold uppercase tracking-wide text-yellow-700 dark:text-yellow-400">معاملات معلّقة</p>
-      <p class="mt-2 text-4xl font-extrabold text-yellow-700 dark:text-yellow-300">{{ stat_pending_transactions }}</p>
-      <p class="mt-1 text-xs text-yellow-600 dark:text-yellow-500">بانتظار قبول الطرف الآخر</p>
+    <div class="rounded-xl border border-blue-200 bg-blue-50 p-5 dark:border-blue-700 dark:bg-blue-900/20">
+      <p class="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">عمليات هذا الشهر</p>
+      <p class="mt-2 text-4xl font-extrabold text-blue-700 dark:text-blue-300">{{ stat_this_month_txn }}</p>
+      <p class="mt-1 text-xs text-blue-600 dark:text-blue-500">من أصل {{ stat_approved_transactions }} إجمالاً</p>
     </div>
 
     <div class="rounded-xl border border-red-200 bg-red-50 p-5 dark:border-red-700 dark:bg-red-900/20">
@@ -81,6 +81,7 @@
         <thead class="bg-gray-50 dark:bg-gray-700">
           <tr>
             <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">المنتج</th>
+            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">البائع</th>
             <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">الحالة</th>
             <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">التاريخ</th>
           </tr>
@@ -89,7 +90,13 @@
           {% for txn in recent_transactions %}
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
             <td class="px-4 py-2 font-medium text-gray-900 dark:text-white">
-              {{ txn.product.brand }} {{ txn.product.model }}
+              <a href="{% url 'admin:transactions_transaction_change' txn.id %}"
+                 class="hover:underline text-blue-600 dark:text-blue-400">
+                {{ txn.product.brand }} {{ txn.product.model }}
+              </a>
+            </td>
+            <td class="px-4 py-2 text-gray-600 dark:text-gray-300">
+              {{ txn.seller_full_name|default:"—" }}
             </td>
             <td class="px-4 py-2">
               <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
@@ -148,6 +155,52 @@
       {% endif %}
     </div>
 
+  </div>
+
+  <!-- ── Recent users ───────────────────────────────────────────────────────── -->
+  <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
+    <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-5 py-3">
+      <h2 class="text-sm font-semibold text-gray-900 dark:text-white">آخر المستخدمين المسجّلين</h2>
+      <a href="{% url 'admin:accounts_user_changelist' %}"
+         class="text-xs text-blue-600 dark:text-blue-400 hover:underline">عرض الكل</a>
+    </div>
+    {% if recent_users %}
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 dark:bg-gray-700">
+        <tr>
+          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">المعرّف</th>
+          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">النوع</th>
+          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">الاسم / المنشأة</th>
+          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">موثّق</th>
+          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">تاريخ التسجيل</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+        {% for u in recent_users %}
+        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+          <td class="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">
+            <a href="{% url 'admin:accounts_user_change' u.id %}"
+               class="hover:underline text-blue-600 dark:text-blue-400">
+              {{ u.id|truncatechars:12 }}
+            </a>
+          </td>
+          <td class="px-4 py-2 text-gray-700 dark:text-gray-300">{{ u.get_user_type_display }}</td>
+          <td class="px-4 py-2 text-gray-900 dark:text-white">{{ u.business_name|default:"—" }}</td>
+          <td class="px-4 py-2">
+            {% if u.absher_verified or u.wathiq_verified %}
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">موثّق</span>
+            {% else %}
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">غير موثّق</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ u.date_joined|date:"Y/m/d" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="px-5 py-6 text-center text-sm text-gray-400">لا يوجد مستخدمون بعد</p>
+    {% endif %}
   </div>
 
 </div>
