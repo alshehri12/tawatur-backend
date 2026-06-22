@@ -3,6 +3,8 @@ Development settings. Extends base.py with local-only overrides.
 Never use these settings in production.
 """
 
+import os
+import sys
 import socket
 from .base import *
 from decouple import Csv, config
@@ -31,16 +33,20 @@ except Exception:
     pass
 
 # Print current IP on startup so you always know where the app should connect.
-import sys
 if 'runserver' in sys.argv:
     _ip_display = _lan_ip or '?'
     print(f"\n{'='*55}")
     print(f"  تواتر Backend — Development Server")
-    print(f"  LAN IP  : http://{_ip_display}:8000/")
-    print(f"  Bonjour : http://Abdulrahmans-Mac-Studio.local:8000/")
-    print(f"  Admin   : http://{_ip_display}:8000/admin/")
-    print(f"  iOS app points to: Abdulrahmans-Mac-Studio.local")
+    print(f"  LAN IP     : http://{_ip_display}:8000/")
+    print(f"  Admin      : http://{_ip_display}:8000/admin/")
+    print(f"  Discovery  : UDP port 45678 (iOS auto-detects IP)")
     print(f"{'='*55}\n")
+
+    # Start UDP discovery only in the actual server process (not the reloader).
+    # Django sets RUN_MAIN=true in the child process that handles requests.
+    if os.environ.get('RUN_MAIN') == 'true' and _lan_ip:
+        from config.discovery import start_udp_discovery
+        start_udp_discovery(_lan_ip)
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Set USE_POSTGRES=True in .env once PostgreSQL is installed and running.
