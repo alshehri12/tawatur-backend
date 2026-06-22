@@ -19,6 +19,7 @@ ALLOWED_HOSTS = config(
 # Always append the machine's current LAN IP so the iOS device on the same Wi-Fi
 # can reach the server without editing .env every time DHCP reassigns an address.
 # Uses a UDP connect trick (no data sent) to find the outbound interface IP.
+_lan_ip = None
 try:
     _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     _s.connect(('8.8.8.8', 80))
@@ -28,6 +29,18 @@ try:
         ALLOWED_HOSTS = list(ALLOWED_HOSTS) + [_lan_ip]
 except Exception:
     pass
+
+# Print current IP on startup so you always know where the app should connect.
+import sys
+if 'runserver' in sys.argv:
+    _ip_display = _lan_ip or '?'
+    print(f"\n{'='*55}")
+    print(f"  تواتر Backend — Development Server")
+    print(f"  LAN IP  : http://{_ip_display}:8000/")
+    print(f"  Bonjour : http://Abdulrahmans-Mac-Studio.local:8000/")
+    print(f"  Admin   : http://{_ip_display}:8000/admin/")
+    print(f"  iOS app points to: Abdulrahmans-Mac-Studio.local")
+    print(f"{'='*55}\n")
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Set USE_POSTGRES=True in .env once PostgreSQL is installed and running.
