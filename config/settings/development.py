@@ -14,7 +14,7 @@ DEBUG = _debug_value not in {'0', 'false', 'no', 'off', 'prod', 'production', 'r
 
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
-    default='localhost,127.0.0.1,0.0.0.0,Abdulrahmans-Mac-Studio.local',
+    default='localhost,127.0.0.1,0.0.0.0,Abdulrahmans-Mac-Studio.local,.ngrok-free.app,.ngrok-free.dev,.ngrok.io',
     cast=Csv(),
 )
 
