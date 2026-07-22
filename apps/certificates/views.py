@@ -25,11 +25,38 @@ from .services import CertificateService
 
 
 class MyCertificatesView(APIView):
-    """GET /api/v1/certificates/ — all certificates issued to the current user."""
+    """GET /api/v1/certificates/ — all certificates issued to the current user (as buyer)."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         certs = Certificate.objects.filter(owner=request.user).select_related('product')
+        return Response(CertificateSerializer(certs, many=True, context={'request': request}).data)
+
+
+class SoldByMeCertificatesView(APIView):
+    """
+    GET /api/v1/certificates/sold-by-me/
+
+    Contracts where the current user was named as the SELLER on a confirmed
+    direct-purchase transaction — matched either by phone number (the
+    moment they register a Tawatur account with the same mobile number the
+    buyer entered) or by National ID/Iqama (once they submit identity
+    verification). The seller doesn't need an account at the time of the
+    sale; whichever identifier matches first surfaces their past sales here.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Q
+
+        user = request.user
+        id_hashes = [h for h in (user.national_id_hash, user.iqama_hash) if h]
+
+        match = Q(transaction__seller_mobile_hash=user.phone_hash)
+        if id_hashes:
+            match |= Q(transaction__seller_id_number_hash__in=id_hashes)
+
+        certs = Certificate.objects.filter(match).select_related('product', 'transaction')
         return Response(CertificateSerializer(certs, many=True, context={'request': request}).data)
 
 

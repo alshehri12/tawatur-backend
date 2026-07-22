@@ -4,6 +4,7 @@ Serializers for the transactions API.
 
 from decimal import Decimal
 from rest_framework import serializers
+from apps.products.models import Product
 from .models import Transaction, AuditLog
 
 
@@ -34,7 +35,69 @@ class CreateDirectPurchaseSerializer(serializers.Serializer):
     notes        = serializers.CharField(max_length=500,  required=False, allow_blank=True, default='')
 
 
-# ── Output Serializers ────────────────────────────────────────────────────────
+class CreateRegisteredPurchaseSerializer(serializers.Serializer):
+    """
+    Validates the body for POST /api/v1/transactions/register-purchase/.
+
+    Single-step flow: the buyer registers the device they just bought AND
+    documents the purchase in one call — replaces the separate "register a
+    product" step that used to end at "منتجاتي" with nothing else happening.
+
+    Seller fields are unchanged from CreateDirectPurchaseSerializer — the
+    seller still doesn't need a platform account. The difference is the
+    transaction is created PENDING, not auto-approved: the buyer shares the
+    confirmation link with the seller, who reviews and accepts/rejects it
+    (see CreateRegisteredPurchaseView / SellerConfirmView).
+    """
+
+    # ── Product fields (device being registered) ──────────────────────────────
+    category = serializers.ChoiceField(
+        choices=Product.CATEGORY_CHOICES,
+        error_messages={'invalid_choice': 'الفئة غير صالحة.'},
+    )
+    brand = serializers.CharField(max_length=100)
+    model = serializers.CharField(max_length=100)
+    condition = serializers.ChoiceField(
+        choices=Product.CONDITION_CHOICES,
+        error_messages={'invalid_choice': 'الحالة غير صالحة.'},
+    )
+    imei_1        = serializers.CharField(max_length=15,  required=False, allow_blank=True)
+    imei_2        = serializers.CharField(max_length=15,  required=False, allow_blank=True)
+    serial_number = serializers.CharField(max_length=50,  required=False, allow_blank=True)
+    product_notes = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
+
+    # ── Seller information (the seller does not need a platform account) ──────
+    seller_full_name = serializers.CharField(max_length=200)
+    seller_id_number = serializers.CharField(max_length=20)   # Saudi ID (10 digits) or Iqama
+    seller_mobile    = serializers.CharField(max_length=20)
+    seller_city      = serializers.CharField(max_length=100)
+
+    # ── Deal details ───────────────────────────────────────────────────────────
+    price = serializers.DecimalField(
+        max_digits=10, decimal_places=2,
+        required=False, allow_null=True,
+        min_value=Decimal('0'),
+    )
+    seller_terms = serializers.CharField(max_length=2000, required=False, allow_blank=True, default='')
+    notes        = serializers.CharField(max_length=500,  required=False, allow_blank=True, default='')
+
+    def validate_imei_1(self, value):
+        if value and (not value.isdigit() or len(value) not in (14, 15)):
+            raise serializers.ValidationError('IMEI يجب أن يكون 14 أو 15 رقمًا.')
+        return value
+
+    def validate_imei_2(self, value):
+        if value and (not value.isdigit() or len(value) not in (14, 15)):
+            raise serializers.ValidationError('IMEI يجب أن يكون 14 أو 15 رقمًا.')
+        return value
+
+    def validate(self, data):
+        if not any([data.get('imei_1'), data.get('imei_2'), data.get('serial_number')]):
+            raise serializers.ValidationError(
+                'يجب إدخال رقم IMEI أو الرقم التسلسلي واحد على الأقل.'
+            )
+        return data
+
 
 class AuditLogSerializer(serializers.ModelSerializer):
     class Meta:
@@ -84,13 +147,24 @@ class TransactionDetailSerializer(TransactionSerializer):
     certificate_id      = serializers.SerializerMethodField()
     certificate_pdf_url = serializers.SerializerMethodField()
 
+    # Public link the buyer shares with the seller to confirm/reject the deal
+    confirm_url = serializers.SerializerMethodField()
+
     class Meta(TransactionSerializer.Meta):
         fields = TransactionSerializer.Meta.fields + [
             'notes', 'seller_terms',
             'seller_full_name', 'seller_id_number', 'seller_mobile', 'seller_city',
             'certificate_id', 'certificate_pdf_url',
+            'confirm_url',
             'audit_logs',
         ]
+
+    def get_confirm_url(self, obj):
+        if obj.status != Transaction.PENDING:
+            return None
+        request = self.context.get('request')
+        path = f'/confirm/{obj.link_token}/'
+        return request.build_absolute_uri(path) if request else path
 
     def get_seller_id_number(self, obj):
         return obj.seller_id_number

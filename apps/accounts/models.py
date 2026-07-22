@@ -137,9 +137,11 @@ class OTPVerification(models.Model):
     # ── Purpose choices ───────────────────────────────────────────────────────
     LOGIN = 'login'
     REGISTER = 'register'
+    SELLER_CONFIRM = 'seller_confirm'
     PURPOSE_CHOICES = [
         (LOGIN, 'تسجيل الدخول'),
         (REGISTER, 'إنشاء حساب'),
+        (SELLER_CONFIRM, 'تأكيد عملية بيع (رابط عام)'),
     ]
 
     # Hashed phone number — ties this OTP to a specific user without storing their phone.

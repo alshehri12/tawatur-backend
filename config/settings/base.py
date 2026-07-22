@@ -270,6 +270,8 @@ OTP_EXPIRY_MINUTES = 5          # OTP expires after 5 minutes
 OTP_MAX_ATTEMPTS = 3            # Lock out after 3 wrong attempts
 OTP_LOCKOUT_HOURS = 1           # Lockout duration after exceeding attempts
 OTP_RATE_LIMIT_PER_HOUR = 5    # Max OTP requests per phone per hour
+OTP_EXPOSE_IN_RESPONSE = False  # Never expose the OTP in API responses by default;
+                                # development.py overrides this to True for testing.
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 # In production: restrict to known mobile app domains / API gateway only

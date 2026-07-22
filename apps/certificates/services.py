@@ -135,185 +135,158 @@ def _draw_pdf(cert_number: str, cert_type_label: str, product,
     rel_path = f'certificates/pdf/{cert_number}.pdf'
     output_path = Path(settings.MEDIA_ROOT) / rel_path
 
-    # ── Palette ───────────────────────────────────────────────────────────────
-    NAVY       = colors.HexColor('#1A3A6B')
-    GOLD       = colors.HexColor('#C9A84C')
-    GOLD_LIGHT = colors.HexColor('#FEF9EE')
-    TEXT_DARK  = colors.HexColor('#1A1A2E')
-    SUBTEXT    = colors.HexColor('#6B7280')
-    SUCCESS    = colors.HexColor('#10B981')
-    WARNING    = colors.HexColor('#F59E0B')
-    LIGHT_BG   = colors.HexColor('#F8F9FC')
-    STRIPE_BG  = colors.HexColor('#EFF3FA')
-    BORDER_C   = colors.HexColor('#E5E7EB')
+    # ── Palette — matches the app's green/white brand identity ────────────────
+    GREEN       = colors.HexColor('#0BA378')
+    GREEN_DEEP  = colors.HexColor('#067A59')
+    GREEN_INK   = colors.HexColor('#0A2E22')
+    MINT        = colors.HexColor('#E9F8F1')
+    INK         = colors.HexColor('#14231C')
+    MUTED       = colors.HexColor('#7A8C83')
+    FAINT       = colors.HexColor('#ADBDB4')
+    LINE        = colors.HexColor('#ECF2EE')
+    WARNING     = colors.HexColor('#B45309')
 
-    PAGE_W, PAGE_H = A4
-    M  = 1.8 * cm    # content margin
-    BD = 0.6 * cm    # page border inset from edge
-    BDI = BD + 0.22 * cm  # inner border inset
-
-    c = pdfcanvas.Canvas(str(output_path), pagesize=A4)
-    font_r = _ARABIC_FONT if _FONT_REGISTERED else 'Helvetica'
-    font_b = _ARABIC_FONT_BOLD if _FONT_REGISTERED else 'Helvetica-Bold'
-
-    # ── Decorative double border ───────────────────────────────────────────────
-    c.setStrokeColor(GOLD)
-    c.setLineWidth(1.8)
-    c.rect(BD, BD, PAGE_W - 2 * BD, PAGE_H - 2 * BD, stroke=True, fill=False)
-    c.setStrokeColor(NAVY)
-    c.setLineWidth(0.4)
-    c.rect(BDI, BDI, PAGE_W - 2 * BDI, PAGE_H - 2 * BDI, stroke=True, fill=False)
-
-    # ── Header ────────────────────────────────────────────────────────────────
-    HDR_H   = 4.0 * cm
-    HDR_TOP = PAGE_H - BDI
-    HDR_BOT = HDR_TOP - HDR_H
-
-    c.setFillColor(NAVY)
-    c.rect(BDI, HDR_BOT, PAGE_W - 2 * BDI, HDR_H, fill=True, stroke=False)
-    c.setFillColor(GOLD)
-    c.rect(BDI, HDR_BOT, PAGE_W - 2 * BDI, 0.25 * cm, fill=True, stroke=False)
-
-    c.setFillColor(colors.white)
-    c.setFont(font_b, 30)
-    c.drawRightString(PAGE_W - M, HDR_BOT + 2.1 * cm, _ar('تواتر'))
-
-    c.setFont(font_r, 10)
-    c.setFillColor(GOLD)
-    c.drawString(M, HDR_BOT + 2.55 * cm, _ar('منصة توثيق تحويل الملكية'))
-    c.setFont('Helvetica', 9)
-    c.setFillColor(colors.HexColor('#A8BDD4'))
-    c.drawString(M, HDR_BOT + 1.8 * cm, 'tawatur.sa')
-
-    # ── Certificate type title ─────────────────────────────────────────────────
-    y = HDR_BOT - 1.3 * cm
-
-    c.setFillColor(TEXT_DARK)
-    c.setFont(font_b, 20)
-    c.drawCentredString(PAGE_W / 2, y, _ar(cert_type_label))
-
-    # Ornamental line + diamond under title
-    y -= 0.5 * cm
-    c.setStrokeColor(GOLD)
-    c.setLineWidth(0.8)
-    c.line(M, y, PAGE_W / 2 - 2.5 * cm, y)
-    c.line(PAGE_W / 2 + 2.5 * cm, y, PAGE_W - M, y)
-    c.setFillColor(GOLD)
-    d = 0.2 * cm
-    cx = PAGE_W / 2
-    path = c.beginPath()
-    path.moveTo(cx, y + d); path.lineTo(cx + d, y)
-    path.lineTo(cx, y - d); path.lineTo(cx - d, y)
-    path.close()
-    c.drawPath(path, fill=True, stroke=False)
-
-    # ── Certificate number badge ───────────────────────────────────────────────
-    y -= 0.95 * cm
-    bw = 7.0 * cm
-    bx = (PAGE_W - bw) / 2
-    c.setFillColor(GOLD_LIGHT)
-    c.setStrokeColor(GOLD)
-    c.setLineWidth(0.8)
-    c.roundRect(bx, y - 0.3 * cm, bw, 0.8 * cm, radius=4, fill=True, stroke=True)
-    c.setFillColor(NAVY)
-    c.setFont('Helvetica-Bold', 12)
-    c.drawCentredString(PAGE_W / 2, y, cert_number)
-
-    # ── Intro sentence ────────────────────────────────────────────────────────
-    y -= 0.75 * cm
-    c.setFont(font_r, 9)
-    c.setFillColor(SUBTEXT)
-    c.drawCentredString(PAGE_W / 2, y,
-                        _ar('نشهد بأن عملية نقل الملكية المبيّنة أدناه قد اكتملت وتمّ توثيقها رسمياً'))
-
-    # ── Info card with alternating row stripes ────────────────────────────────
+    # ── Build the device/deal rows first — the page height is sized to fit
+    # them exactly, like a real receipt/certificate, instead of forcing a
+    # fixed A4 sheet that leaves most of the page empty ─────────────────────
     rows = [
         ('الفئة',   product.get_category_display()),
-        ('الماركة', product.brand),
-        ('الموديل', product.model),
+        ('الماركة والموديل', f'{product.brand} {product.model}'),
         ('الحالة',  product.get_condition_display()),
     ]
     if transaction:
         from apps.transactions.models import Transaction as TxnModel
-        rows.append(('نوع المعاملة', transaction.get_transaction_type_display()))
         if transaction.price:
             rows.append(('قيمة الصفقة', f'{transaction.price} ريال سعودي'))
         if transaction.approved_at:
-            rows.append(('تاريخ التوثيق',
-                         transaction.approved_at.strftime('%Y/%m/%d  %H:%M')))
+            rows.append(('تاريخ التوثيق', transaction.approved_at.strftime('%Y/%m/%d')))
         if transaction.transaction_type == TxnModel.DIRECT_PURCHASE:
             if transaction.seller_full_name:
-                rows.append(('اسم البائع',     transaction.seller_full_name))
-            if transaction.seller_id_number:
-                rows.append(('هوية البائع',    transaction.seller_id_number))
+                rows.append(('اسم البائع', transaction.seller_full_name))
             if transaction.seller_mobile:
-                rows.append(('جوال البائع',    transaction.seller_mobile))
+                rows.append(('جوال البائع', transaction.seller_mobile))
             if transaction.seller_city:
-                rows.append(('مدينة البائع',   transaction.seller_city))
+                rows.append(('مدينة البائع', transaction.seller_city))
 
-    trust_map = {'excellent': 'ممتاز', 'high': 'عالٍ', 'medium': 'متوسط', 'low': 'منخفض'}
-    trust_ar  = trust_map.get(product.trust_level, product.trust_level)
-    is_good   = product.trust_score >= 65
+    PAGE_W, _A4_H = A4
+    M = 2.1 * cm   # content margin — generous, keeps the page from feeling cramped
 
-    ROW_H    = 0.72 * cm
-    CARD_PAD = 0.38 * cm
-    card_h   = (len(rows) + 1) * ROW_H + 2 * CARD_PAD
+    HDR_H    = 3.4 * cm
+    ROW_H    = 0.85 * cm
+    CARD_PAD = 0.5 * cm
+    card_h   = len(rows) * ROW_H + 2 * CARD_PAD
+    QR, QRP  = 3.0 * cm, 0.28 * cm
+    QRF      = QR + 2 * QRP
 
-    y -= 0.3 * cm
+    # Sum of every vertical gap used below, top to bottom, so the page is
+    # exactly as tall as the content — never a near-empty A4 sheet.
+    PAGE_H = (
+        HDR_H
+        + 1.1 * cm                    # header -> intro line
+        + 0.4 * cm                    # intro line -> card top
+        + 0.55 * cm
+        + card_h
+        + 0.9 * cm + 0.95 * cm        # card -> trust pill
+        + 0.85 * cm                   # pill -> qr caption
+        + 0.25 * cm + QRF             # qr caption -> qr frame
+        + 0.4 * cm                    # qr -> verification url
+        + 1.3 * cm + 0.6 * cm         # footer + bottom breathing room
+    )
+    PAGE_H = min(PAGE_H, _A4_H)  # never taller than A4, only ever shorter
+
+    c = pdfcanvas.Canvas(str(output_path), pagesize=(PAGE_W, PAGE_H))
+    font_r = _ARABIC_FONT if _FONT_REGISTERED else 'Helvetica'
+    font_b = _ARABIC_FONT_BOLD if _FONT_REGISTERED else 'Helvetica-Bold'
+
+    def rtl_row(label: str, value: str, y_pos: float, label_size=10, value_size=10.5):
+        """One RTL row: bold muted label on the far right, value right-aligned
+        just inside it — both anchored right so the whole row reads correctly
+        right-to-left, instead of mixing a right-anchored label with a
+        left-anchored value."""
+        c.setFont(font_b, label_size)
+        c.setFillColor(MUTED)
+        c.drawRightString(PAGE_W - M, y_pos, _ar(label))
+        c.setFont(font_r, value_size)
+        c.setFillColor(INK)
+        c.drawRightString(PAGE_W - M - 4.8 * cm, y_pos, _ar(str(value)))
+
+    # ── Header — single flat green band, no ornamentation ─────────────────────
+    HDR_BOT = PAGE_H - HDR_H
+
+    c.setFillColor(GREEN_INK)
+    c.rect(0, HDR_BOT, PAGE_W, HDR_H, fill=True, stroke=False)
+
+    c.setFillColor(colors.white)
+    c.setFont(font_b, 26)
+    c.drawRightString(PAGE_W - M, HDR_BOT + 2.05 * cm, _ar('تواتر'))
+    c.setFont(font_r, 10.5)
+    c.setFillColor(colors.HexColor('#BFEFDC'))
+    c.drawRightString(PAGE_W - M, HDR_BOT + 1.4 * cm, _ar('منصّة توثيق ملكية الأجهزة'))
+
+    c.setFont(font_b, 13)
+    c.setFillColor(colors.white)
+    c.drawString(M, HDR_BOT + 2.05 * cm, _ar(cert_type_label))
+    c.setFont('Helvetica', 9)
+    c.setFillColor(colors.HexColor('#BFEFDC'))
+    c.drawString(M, HDR_BOT + 1.4 * cm, cert_number)
+
+    # ── Intro line ──────────────────────────────────────────────────────────
+    y = HDR_BOT - 1.1 * cm
+    c.setFont(font_r, 9.5)
+    c.setFillColor(MUTED)
+    c.drawCentredString(PAGE_W / 2, y,
+                        _ar('نشهد بأن عملية نقل الملكية المبيّنة أدناه قد اكتملت وتمّ توثيقها رسمياً على منصة تواتر'))
+
+    # ── Device details — one simple card, hairline dividers, right-aligned ───
+    # (rows / ROW_H / CARD_PAD / card_h already computed above, before the
+    # canvas was created, so the page height could be sized to fit them)
+    y -= 0.55 * cm
     card_top = y
     card_bot = card_top - card_h
 
-    c.setFillColor(LIGHT_BG)
-    c.setStrokeColor(BORDER_C)
-    c.setLineWidth(0.5)
-    c.roundRect(M, card_bot, PAGE_W - 2 * M, card_h, radius=5, fill=True, stroke=True)
+    c.setFillColor(colors.white)
+    c.setStrokeColor(LINE)
+    c.setLineWidth(0.75)
+    c.roundRect(M, card_bot, PAGE_W - 2 * M, card_h, radius=6, fill=True, stroke=True)
 
     for i, (lbl, val) in enumerate(rows):
         row_top = card_top - CARD_PAD - i * ROW_H
-        if i % 2 == 0:
-            c.setFillColor(STRIPE_BG)
-            c.rect(M + 2, row_top - ROW_H, PAGE_W - 2 * M - 4, ROW_H,
-                   fill=True, stroke=False)
         text_y = row_top - ROW_H * 0.62
-        c.setFont(font_b, 10)
-        c.setFillColor(SUBTEXT)
-        c.drawRightString(PAGE_W - M - 0.5 * cm, text_y, _ar(lbl + ' :'))
-        c.setFont(font_r, 10)
-        c.setFillColor(TEXT_DARK)
-        c.drawString(M + 0.5 * cm, text_y, str(val))
+        rtl_row(lbl, val, text_y)
+        if i < len(rows) - 1:
+            c.setStrokeColor(LINE)
+            c.setLineWidth(0.5)
+            c.line(M + 0.4 * cm, row_top - ROW_H, PAGE_W - M - 0.4 * cm, row_top - ROW_H)
 
-    # Trust score row
-    n = len(rows)
-    trust_top = card_top - CARD_PAD - n * ROW_H
-    if n % 2 == 0:
-        c.setFillColor(STRIPE_BG)
-        c.rect(M + 2, trust_top - ROW_H, PAGE_W - 2 * M - 4, ROW_H,
-               fill=True, stroke=False)
-    trust_y = trust_top - ROW_H * 0.62
-    c.setFont(font_b, 10)
-    c.setFillColor(SUBTEXT)
-    c.drawRightString(PAGE_W - M - 0.5 * cm, trust_y, _ar('درجة الثقة :'))
-    c.setFont(font_b, 10)
-    c.setFillColor(SUCCESS if is_good else WARNING)
-    c.drawString(M + 0.5 * cm, trust_y,
-                 f'{product.trust_score}/100  —  {trust_ar}')
+    # ── Trust score — its own small highlighted line, not buried in the table ─
+    trust_map = {'excellent': 'ممتاز', 'high': 'عالٍ', 'medium': 'متوسط', 'low': 'منخفض'}
+    trust_ar = trust_map.get(product.trust_level, product.trust_level)
+    is_good = product.trust_score >= 65
 
-    # ── QR Code in framed box ─────────────────────────────────────────────────
-    QR  = 3.2 * cm
-    QRP = 0.3 * cm
-    QRF = QR + 2 * QRP
+    y = card_bot - 0.9 * cm
+    pill_w, pill_h = 6.4 * cm, 0.95 * cm
+    px = (PAGE_W - pill_w) / 2
+    c.setFillColor(MINT if is_good else colors.HexColor('#FEF6E7'))
+    c.roundRect(px, y - pill_h, pill_w, pill_h, radius=pill_h / 2, fill=True, stroke=False)
+    c.setFont(font_b, 11)
+    c.setFillColor(GREEN_DEEP if is_good else WARNING)
+    c.drawCentredString(PAGE_W / 2, y - pill_h * 0.64,
+                        _ar(f'درجة الثقة  {product.trust_score}/100  —  {trust_ar}'))
+
+    # ── QR code — simple thin frame, no double borders ─────────────────────
+    # (QR / QRP / QRF already computed above, before the canvas was created)
     QRX = (PAGE_W - QRF) / 2
 
-    y = card_bot - 0.55 * cm
+    y = y - pill_h - 0.85 * cm
     c.setFont(font_r, 9)
-    c.setFillColor(SUBTEXT)
-    c.drawCentredString(PAGE_W / 2, y, _ar('امسح رمز QR للتحقق من صحة الشهادة'))
+    c.setFillColor(MUTED)
+    c.drawCentredString(PAGE_W / 2, y, _ar('امسح الرمز للتحقق من صحة الشهادة — بلا تسجيل دخول'))
 
-    qr_frame_bot = y - 0.2 * cm - QRF
+    qr_frame_bot = y - 0.25 * cm - QRF
     c.setFillColor(colors.white)
-    c.setStrokeColor(NAVY)
-    c.setLineWidth(0.8)
-    c.roundRect(QRX, qr_frame_bot, QRF, QRF, radius=4, fill=True, stroke=True)
+    c.setStrokeColor(LINE)
+    c.setLineWidth(0.75)
+    c.roundRect(QRX, qr_frame_bot, QRF, QRF, radius=6, fill=True, stroke=True)
 
     full_qr_path = Path(settings.MEDIA_ROOT) / qr_path
     if full_qr_path.exists():
@@ -322,22 +295,22 @@ def _draw_pdf(cert_number: str, cert_type_label: str, product,
                     width=QR, height=QR)
 
     c.setFont('Helvetica', 7.5)
-    c.setFillColor(SUBTEXT)
-    c.drawCentredString(PAGE_W / 2, qr_frame_bot - 0.35 * cm, verification_url)
+    c.setFillColor(FAINT)
+    c.drawCentredString(PAGE_W / 2, qr_frame_bot - 0.4 * cm, verification_url)
 
-    # ── Footer with gold stripe ────────────────────────────────────────────────
-    c.setFillColor(GOLD)
-    c.rect(BDI, BDI + 0.85 * cm, PAGE_W - 2 * BDI, 0.18 * cm,
-           fill=True, stroke=False)
+    # ── Footer — one hairline, no gold stripe ─────────────────────────────────
+    FOOT_Y = 1.3 * cm
+    c.setStrokeColor(LINE)
+    c.setLineWidth(0.75)
+    c.line(M, FOOT_Y + 0.4 * cm, PAGE_W - M, FOOT_Y + 0.4 * cm)
 
     issued = timezone.now().strftime('%Y/%m/%d')
     c.setFont(font_r, 8)
-    c.setFillColor(SUBTEXT)
-    c.drawRightString(PAGE_W - M, BDI + 0.38 * cm,
-                      _ar(f'تاريخ الإصدار: {issued}'))
+    c.setFillColor(MUTED)
+    c.drawRightString(PAGE_W - M, FOOT_Y, _ar(f'تاريخ الإصدار: {issued}'))
     c.setFont('Helvetica', 8)
-    c.drawString(M, BDI + 0.38 * cm,
-                 'Issued by Tawatur Platform  ·  tawatur.sa')
+    c.setFillColor(FAINT)
+    c.drawString(M, FOOT_Y, 'Tawatur Platform')
 
     c.save()
     return rel_path

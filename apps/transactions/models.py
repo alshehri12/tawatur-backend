@@ -87,7 +87,15 @@ class Transaction(models.Model):
     # The seller is not a registered user; their details are entered by the buyer.
     seller_full_name         = models.CharField(max_length=200, blank=True, default='')
     seller_id_number_encrypted = models.TextField(blank=True, default='')   # Saudi ID / Iqama
+    # HMAC hash of the seller's ID/Iqama — lets us recognize the seller later
+    # if they register their own Tawatur account with the same national ID or
+    # Iqama, so they can see the contracts where they were the seller.
+    seller_id_number_hash    = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     seller_mobile_encrypted  = models.TextField(blank=True, default='')
+    # HMAC hash of the seller's mobile (same normalization as User.phone_hash)
+    # — the moment the seller registers a Tawatur account with this phone
+    # number, this transaction shows up as a pending request addressed to them.
+    seller_mobile_hash       = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     seller_city              = models.CharField(max_length=100, blank=True, default='')
 
     link_token = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)

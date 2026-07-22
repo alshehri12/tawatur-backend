@@ -9,6 +9,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
 from apps.certificates.urls import certificates_urlpatterns, verify_urlpatterns
+from apps.transactions.public_views import seller_confirm_view
 
 
 def health(request):
@@ -21,6 +22,9 @@ urlpatterns = [
 
     # ── Health check (no auth, no dependencies) ───────────────────────────────
     path('api/v1/health/', health, name='health'),
+
+    # ── Public seller-confirmation page (opened from a shared link, no login) ─
+    path('confirm/<uuid:token>/', seller_confirm_view, name='seller-confirm'),
 
     # ── API v1 ────────────────────────────────────────────────────────────────
     path('api/v1/auth/', include('apps.accounts.urls')),

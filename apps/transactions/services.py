@@ -18,6 +18,155 @@ from .models import Transaction, AuditLog
 
 class TransactionService:
 
+    # ── Registered purchase (buyer-initiated, product created inline) ─────────
+
+    @staticmethod
+    @db_transaction.atomic
+    def create_registered_purchase(
+        buyer,
+        product_data: dict,
+        seller_full_name: str,
+        seller_id_number: str,
+        seller_mobile: str,
+        seller_city: str,
+        price=None,
+        seller_terms: str = '',
+        notes: str = '',
+    ) -> Transaction:
+        """
+        Single-step flow: register the device the buyer just bought AND
+        document the purchase, in one atomic call — replaces the old two-step
+        "register a product" then "document a purchase" flows.
+
+        The buyer enters the seller's info exactly as before (the seller
+        doesn't need a platform account). Unlike the old direct-purchase
+        flow, the transaction is created PENDING, not auto-approved — the
+        buyer shares the confirmation link (Transaction.link_token) with the
+        seller, who reviews the deal and accepts/rejects it via
+        confirm_by_seller() / reject_by_seller() below. No certificate is
+        generated until the seller confirms.
+        """
+        from core.encryption import encrypt
+        from core.hashing import hash_value, hash_phone
+        from apps.products.services import ProductRegistrationService
+
+        product = ProductRegistrationService.register(buyer, product_data)
+
+        now = timezone.now()
+
+        txn = Transaction.objects.create(
+            product=product,
+            initiator=buyer,
+            recipient=None,
+            transaction_type=Transaction.DIRECT_PURCHASE,
+            price=price,
+            device_condition=product_data.get('condition', ''),
+            seller_terms=seller_terms,
+            notes=notes,
+            seller_full_name=seller_full_name,
+            seller_id_number_encrypted=encrypt(seller_id_number),
+            seller_id_number_hash=hash_value(seller_id_number),
+            seller_mobile_encrypted=encrypt(seller_mobile),
+            seller_mobile_hash=hash_phone(seller_mobile),
+            seller_city=seller_city,
+            status=Transaction.PENDING,
+            expires_at=now + timedelta(hours=48),
+        )
+
+        AuditLog.objects.create(
+            transaction=txn,
+            actor=buyer,
+            action='registered_purchase_submitted',
+            old_status='',
+            new_status=Transaction.PENDING,
+        )
+
+        return txn
+
+    # ── Seller confirms / rejects via the public link (no account needed) ─────
+
+    @staticmethod
+    def _schedule_certificate(txn_id: str):
+        def _generate_cert_after_commit():
+            import threading
+
+            def _bg():
+                try:
+                    from apps.certificates.tasks import generate_transfer_certificate_task
+                    generate_transfer_certificate_task.delay(txn_id)
+                    return
+                except Exception:
+                    pass
+                try:
+                    from apps.certificates.services import CertificateService
+                    from apps.transactions.models import Transaction as _T
+                    t = _T.objects.select_related('product', 'initiator').get(id=txn_id)
+                    CertificateService.generate_transfer_certificate(t)
+                except Exception:
+                    pass
+
+            threading.Thread(target=_bg, daemon=True).start()
+
+        db_transaction.on_commit(_generate_cert_after_commit)
+
+    @staticmethod
+    @db_transaction.atomic
+    def confirm_by_seller(txn: Transaction) -> Transaction:
+        """
+        The seller reviews the deal (via the public link) and confirms it.
+        No login required — the seller doesn't need a platform account.
+        """
+        if txn.status != Transaction.PENDING:
+            raise ValueError('هذه العملية ليست بانتظار الموافقة.')
+
+        if txn.expires_at < timezone.now():
+            txn.status = Transaction.EXPIRED
+            txn.save(update_fields=['status', 'updated_at'])
+            raise ValueError('انتهت صلاحية رابط التأكيد. اطلب من المشتري إنشاء عملية جديدة.')
+
+        now = timezone.now()
+        txn.status = Transaction.APPROVED
+        txn.approved_at = now
+        txn.save(update_fields=['status', 'approved_at', 'updated_at'])
+
+        # AuditLog.actor is a required FK and the seller has no platform
+        # account — attribute the log entry to the buyer/initiator, the
+        # action name makes clear it was actually the seller who acted.
+        AuditLog.objects.create(
+            transaction=txn,
+            actor=txn.initiator,
+            action='seller_confirmed_via_link',
+            old_status=Transaction.PENDING,
+            new_status=Transaction.APPROVED,
+        )
+
+        from apps.products.services import TrustScoreService
+        TrustScoreService.calculate(txn.product)
+
+        TransactionService._schedule_certificate(str(txn.id))
+
+        return txn
+
+    @staticmethod
+    @db_transaction.atomic
+    def reject_by_seller(txn: Transaction) -> Transaction:
+        """The seller disputes the deal via the public link — no ownership change."""
+        if txn.status != Transaction.PENDING:
+            raise ValueError('هذه العملية ليست بانتظار الموافقة.')
+
+        txn.status = Transaction.REJECTED
+        txn.save(update_fields=['status', 'updated_at'])
+
+        AuditLog.objects.create(
+            transaction=txn,
+            actor=txn.initiator,
+            action='seller_rejected_via_link',
+            old_status=Transaction.PENDING,
+            new_status=Transaction.REJECTED,
+        )
+
+        return txn
+
     # ── Direct purchase (buyer-initiated) ────────────────────────────────────
 
     @staticmethod
@@ -42,6 +191,7 @@ class TransactionService:
           - A certificate is generated automatically.
         """
         from core.encryption import encrypt
+        from core.hashing import hash_value, hash_phone
         from apps.products.models import Product, OwnershipRecord
 
         try:
@@ -72,7 +222,9 @@ class TransactionService:
             notes=notes,
             seller_full_name=seller_full_name,
             seller_id_number_encrypted=encrypt(seller_id_number),
+            seller_id_number_hash=hash_value(seller_id_number),
             seller_mobile_encrypted=encrypt(seller_mobile),
+            seller_mobile_hash=hash_phone(seller_mobile),
             seller_city=seller_city,
             status=Transaction.APPROVED,
             expires_at=now + timedelta(hours=48),

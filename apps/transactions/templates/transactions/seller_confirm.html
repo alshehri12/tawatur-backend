@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>عقد بيع — تواتر</title>
+<style>
+  :root{
+    --green:#0BA378; --green-deep:#067A59; --green-ink:#0A2E22;
+    --mint:#E9F8F1; --mint-2:#D3F2E4; --page:#F7FAF8; --card:#FFFFFF;
+    --line:#ECF2EE; --ink:#14231C; --muted:#7A8C83;
+    --danger:#DC4B4B; --danger-bg:#FDEEEE; --amber:#B45309; --amber-bg:#FEF6E7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Tahoma,sans-serif;
+    background:var(--page); color:var(--ink);
+    min-height:100vh; display:flex; align-items:flex-start; justify-content:center;
+    padding:24px 14px 48px;
+  }
+  .contract{
+    width:100%; max-width:440px; background:var(--card);
+    border:1px solid var(--line); border-radius:20px; overflow:hidden;
+    box-shadow:0 8px 30px rgba(10,46,34,.08);
+  }
+  .head{
+    background:var(--green-ink);
+    color:#fff; padding:20px 22px 16px; text-align:center;
+  }
+  .head h1{font-size:16px; font-weight:700; margin-bottom:4px;}
+  .head .num{font-size:11px; opacity:.7; direction:ltr; letter-spacing:.02em;}
+  .status-tag{
+    display:inline-block; margin-top:10px; padding:4px 12px; border-radius:999px;
+    font-size:11px; font-weight:700; background:rgba(255,255,255,.14);
+  }
+  .body{padding:20px 22px 24px;}
+  .lede{font-size:12.5px; color:var(--muted); text-align:center; line-height:1.7; margin-bottom:16px;}
+
+  .parties{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px;}
+  .party{background:var(--page); border:1px solid var(--line); border-radius:12px; padding:12px;}
+  .party-role{font-size:10px; font-weight:700; color:var(--green-deep); margin-bottom:6px;}
+  .party-row{font-size:12px; margin-bottom:4px; line-height:1.5;}
+  .party-row:last-child{margin-bottom:0;}
+  .party-row b{display:block; color:var(--ink); font-weight:600;}
+  .party-row span{color:var(--muted); font-size:10.5px;}
+
+  .table{border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:12px;}
+  .trow{display:flex; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--page); font-size:12.5px;}
+  .trow:last-child{border-bottom:none;}
+  .trow span{color:var(--muted);}
+  .trow b{font-weight:600;}
+  .price{color:var(--green-deep); font-size:14px;}
+
+  .actions{display:flex; gap:10px; margin-top:18px;}
+  form{margin:0;}
+  button, .btn-link{
+    border:none; border-radius:14px; padding:14px; font-size:15px; font-weight:700;
+    font-family:inherit; cursor:pointer; width:100%; display:block; text-align:center;
+    text-decoration:none;
+  }
+  .accept{background:linear-gradient(150deg,var(--green),var(--green-deep)); color:#fff;}
+  .reject{background:var(--page); color:var(--danger); border:1.5px solid var(--danger-bg);}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12px; font-weight:700; color:var(--muted); margin-bottom:6px;}
+  .field input{
+    width:100%; padding:13px 14px; font-size:16px; border:1.5px solid var(--line);
+    border-radius:12px; direction:ltr; text-align:center; letter-spacing:.04em;
+    font-family:inherit; color:var(--ink);
+  }
+  .field input:focus{outline:none; border-color:var(--green);}
+  .otp-hint{font-size:11.5px; color:var(--muted); text-align:center; margin-top:8px;}
+  .otp-dev-box{
+    margin-top:10px; background:var(--amber-bg); border:1px solid #F5E3BC; border-radius:10px;
+    padding:10px 12px; text-align:center;
+  }
+  .otp-dev-box .code{font-size:22px; font-weight:800; letter-spacing:.15em; color:var(--amber); direction:ltr;}
+  .otp-dev-box .label{font-size:10.5px; color:var(--amber); margin-top:2px;}
+  .status-banner{
+    text-align:center; border-radius:14px; padding:16px; font-size:14px; font-weight:700;
+    margin-top:6px;
+  }
+  .status-approved{background:var(--mint); color:var(--green-deep);}
+  .status-rejected{background:var(--danger-bg); color:var(--danger);}
+  .status-expired{background:var(--amber-bg); color:var(--amber);}
+  .error{background:var(--danger-bg); color:var(--danger); border-radius:12px; padding:12px; font-size:13px; margin-bottom:14px; text-align:center;}
+  .disclaimer{font-size:10.5px; color:#ADBDB4; text-align:center; margin-top:14px; line-height:1.6;}
+  .foot{font-size:11px; color:#ADBDB4; text-align:center; margin-top:14px;}
+  .link-back{display:block; text-align:center; font-size:12px; color:var(--muted); margin-top:12px;}
+</style>
+</head>
+<body>
+<div class="contract">
+  <div class="head">
+    <h1>عقد بيع جهاز</h1>
+    <div class="num">TXN-{{ txn.id }}</div>
+    {% if txn.status == 'pending' %}
+      <div class="status-tag">بانتظار موافقتك</div>
+    {% elif txn.status == 'approved' %}
+      <div class="status-tag">✓ موثّق</div>
+    {% elif txn.status == 'rejected' %}
+      <div class="status-tag">مرفوض</div>
+    {% elif txn.status == 'expired' %}
+      <div class="status-tag">منتهي الصلاحية</div>
+    {% endif %}
+  </div>
+
+  <div class="body">
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    {% if txn.status == 'pending' %}
+      <p class="lede">هذا عقد يوثّق عملية بيع جهاز بين الطرفين التاليين عبر منصة تواتر. راجع البيانات كاملة قبل المتابعة.</p>
+
+      <div class="parties">
+        <div class="party">
+          <div class="party-role">البائع</div>
+          <div class="party-row"><b>{{ txn.seller_full_name }}</b></div>
+          <div class="party-row"><span>هوية/إقامة</span><b>{{ txn.seller_id_number }}</b></div>
+          <div class="party-row"><span>جوال</span><b style="direction:ltr">{{ txn.seller_mobile }}</b></div>
+          <div class="party-row"><span>مدينة</span><b>{{ txn.seller_city }}</b></div>
+        </div>
+        <div class="party">
+          <div class="party-role">المشتري</div>
+          <div class="party-row"><b>{{ buyer_verified_label }}</b></div>
+          <div class="party-row"><span>جوال</span><b style="direction:ltr">{{ buyer_phone_masked }}</b></div>
+          <div class="party-row"><span>نوع الحساب</span><b>{{ buyer.get_user_type_display }}</b></div>
+        </div>
+      </div>
+
+      <div class="table">
+        <div class="trow"><span>الفئة</span><b>{{ product.get_category_display }}</b></div>
+        <div class="trow"><span>الماركة والموديل</span><b>{{ product.brand }} {{ product.model }}</b></div>
+        <div class="trow"><span>الحالة</span><b>{{ product.get_condition_display }}</b></div>
+        {% if masked_identifier %}<div class="trow"><span>المعرّف (IMEI/S.N)</span><b style="direction:ltr">{{ masked_identifier }}</b></div>{% endif %}
+        {% if txn.price %}<div class="trow"><span>السعر المتفق عليه</span><b class="price">{{ txn.price }} ر.س</b></div>{% endif %}
+      </div>
+
+      {% if stage == 'summary' %}
+        <div class="actions">
+          <form action="" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reject">
+            <button type="submit" class="reject">رفض</button>
+          </form>
+          <form action="" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="start_accept">
+            <button type="submit" class="accept">قبول العقد</button>
+          </form>
+        </div>
+
+      {% elif stage == 'mobile' %}
+        <form action="" method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="send_otp">
+          <div class="field">
+            <label>أدخل رقم جوالك للتأكد من هويتك</label>
+            <input type="tel" name="mobile" placeholder="05XXXXXXXX" value="{{ mobile_value }}" required>
+          </div>
+          <button type="submit" class="accept">إرسال رمز التحقق</button>
+        </form>
+        <p class="otp-hint">يجب أن يطابق هذا الرقم رقم جوال البائع المسجَّل في هذا العقد.</p>
+
+      {% elif stage == 'otp' %}
+        <form action="" method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="verify_otp">
+          <input type="hidden" name="mobile" value="{{ mobile_value }}">
+          <div class="field">
+            <label>رمز التحقق المرسل إلى {{ mobile_value }}</label>
+            <input type="tel" name="otp_code" placeholder="000000" maxlength="6" required>
+          </div>
+          {% if otp_debug %}
+          <div class="otp-dev-box">
+            <div class="code">{{ otp_debug }}</div>
+            <div class="label">رمز تجريبي — لا توجد رسائل SMS مفعّلة بعد</div>
+          </div>
+          {% endif %}
+          <button type="submit" class="accept" style="margin-top:14px">تأكيد وتوثيق العقد</button>
+        </form>
+        <form action="" method="post" style="margin-top:8px">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="start_accept">
+          <button type="submit" class="btn-link" style="background:none; color:var(--muted); font-size:12px; font-weight:600; padding:6px;">تغيير رقم الجوال</button>
+        </form>
+      {% endif %}
+
+      <p class="disclaimer">بتأكيد العقد أنت تقرّ بصحة البيانات أعلاه وموافقتك على إتمام عملية البيع بالشروط المذكورة.</p>
+
+    {% else %}
+      {# already decided — read-only view #}
+      <div class="parties">
+        <div class="party">
+          <div class="party-role">البائع</div>
+          <div class="party-row"><b>{{ txn.seller_full_name }}</b></div>
+          <div class="party-row"><span>مدينة</span><b>{{ txn.seller_city }}</b></div>
+        </div>
+        <div class="party">
+          <div class="party-role">المشتري</div>
+          <div class="party-row"><b>{{ buyer_verified_label }}</b></div>
+        </div>
+      </div>
+      <div class="table">
+        <div class="trow"><span>الجهاز</span><b>{{ product.brand }} {{ product.model }}</b></div>
+        {% if txn.price %}<div class="trow"><span>السعر</span><b class="price">{{ txn.price }} ر.س</b></div>{% endif %}
+        {% if txn.approved_at %}<div class="trow"><span>تاريخ التوثيق</span><b>{{ txn.approved_at|date:"Y/m/d H:i" }}</b></div>{% endif %}
+      </div>
+
+      {% if txn.status == 'approved' %}
+        <div class="status-banner status-approved">✓ تم توثيق هذا العقد رسمياً — أصبحت الملكية موثّقة للمشتري</div>
+      {% elif txn.status == 'rejected' %}
+        <div class="status-banner status-rejected">تم رفض هذا العقد ولم يتم توثيق أي نقل ملكية</div>
+      {% elif txn.status == 'expired' %}
+        <div class="status-banner status-expired">انتهت صلاحية هذا العقد (48 ساعة) — اطلب من المشتري إنشاء عملية جديدة</div>
+      {% endif %}
+    {% endif %}
+
+    <div class="foot">تواتر — منصة توثيق ملكية الأجهزة</div>
+  </div>
+</div>
+</body>
+</html>
