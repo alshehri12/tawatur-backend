@@ -169,14 +169,18 @@ class IdentityVerificationService:
     """
 
     @staticmethod
-    def verify_individual(user, national_id: str = None, iqama: str = None) -> tuple:
+    def verify_individual(user, national_id: str = None, iqama: str = None,
+                           full_name: str = None) -> tuple:
         """
         Submit individual identity data (mock Absher).
 
-        Stores the HMAC hash of the supplied ID and marks identity_submitted=True.
+        Stores the HMAC hash of the supplied ID (for lookups) plus an
+        encrypted, reversible copy (so it can be printed on a certificate/
+        contract later) and marks identity_submitted=True.
         Returns (success: bool, error: str | None).
         """
         from core.hashing import hash_value
+        from core.encryption import encrypt
 
         if not national_id and not iqama:
             return False, 'يجب إدخال رقم الهوية الوطنية أو رقم الإقامة.'
@@ -185,11 +189,17 @@ class IdentityVerificationService:
 
         if national_id:
             user.national_id_hash = hash_value(national_id.strip())
-            update_fields.append('national_id_hash')
+            user.national_id_encrypted = encrypt(national_id.strip())
+            update_fields += ['national_id_hash', 'national_id_encrypted']
 
         if iqama:
             user.iqama_hash = hash_value(iqama.strip())
-            update_fields.append('iqama_hash')
+            user.iqama_encrypted = encrypt(iqama.strip())
+            update_fields += ['iqama_hash', 'iqama_encrypted']
+
+        if full_name:
+            user.full_name = full_name.strip()
+            update_fields.append('full_name')
 
         user.identity_submitted = True
         user.save(update_fields=update_fields)

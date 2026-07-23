@@ -68,6 +68,10 @@ class RegisterIndividualSerializer(serializers.Serializer):
     """
     phone_number = serializers.CharField(max_length=20)
     otp = serializers.CharField(min_length=6, max_length=6)
+    full_name = serializers.CharField(
+        max_length=200,
+        help_text='الاسم الكامل — يظهر على الشهادات والعقود',
+    )
     national_id = serializers.CharField(
         max_length=10, required=False, allow_blank=True,
         help_text='رقم الهوية الوطنية (10 أرقام)',
@@ -84,6 +88,11 @@ class RegisterIndividualSerializer(serializers.Serializer):
         if not value.isdigit():
             raise serializers.ValidationError('رمز التحقق يجب أن يحتوي على أرقام فقط.')
         return value
+
+    def validate_full_name(self, value):
+        if not value.strip():
+            raise serializers.ValidationError('الاسم الكامل مطلوب.')
+        return value.strip()
 
     def validate(self, data):
         # At least one identity document must be provided
@@ -126,8 +135,14 @@ class SubmitIndividualVerificationSerializer(serializers.Serializer):
     Allows an existing individual user to submit (or re-submit) identity data.
     Used if the user skipped verification at registration time.
     """
+    full_name = serializers.CharField(max_length=200)
     national_id = serializers.CharField(max_length=10, required=False, allow_blank=True)
     iqama = serializers.CharField(max_length=10, required=False, allow_blank=True)
+
+    def validate_full_name(self, value):
+        if not value.strip():
+            raise serializers.ValidationError('الاسم الكامل مطلوب.')
+        return value.strip()
 
     def validate(self, data):
         if not data.get('national_id') and not data.get('iqama'):
@@ -161,6 +176,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'id',
             'user_type',
             # Individual flags
+            'full_name',
             'identity_submitted',
             'absher_verified',
             # Business fields

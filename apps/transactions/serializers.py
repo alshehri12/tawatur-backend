@@ -106,11 +106,17 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
 
 class TransactionSerializer(serializers.ModelSerializer):
-    """List view — used in GET /api/v1/transactions/my/."""
+    """
+    List view — used in GET /api/v1/transactions/my/, which now returns
+    every transaction the current user is party to, whether as buyer
+    (initiator) or as the named seller (matched by phone number).
+    """
     transaction_type_display = serializers.CharField(source='get_transaction_type_display', read_only=True)
     status_display           = serializers.CharField(source='get_status_display', read_only=True)
     product_summary          = serializers.SerializerMethodField()
     is_initiator             = serializers.SerializerMethodField()
+    role                     = serializers.SerializerMethodField()
+    counterparty_name        = serializers.SerializerMethodField()
 
     class Meta:
         model = Transaction
@@ -119,7 +125,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             'status', 'status_display',
             'price', 'device_condition',
             'created_at', 'expires_at', 'approved_at',
-            'product_summary', 'is_initiator',
+            'product_summary', 'is_initiator', 'role', 'counterparty_name',
         ]
 
     def get_product_summary(self, obj):
@@ -133,6 +139,20 @@ class TransactionSerializer(serializers.ModelSerializer):
     def get_is_initiator(self, obj):
         request = self.context.get('request')
         return request and request.user == obj.initiator
+
+    def get_role(self, obj):
+        request = self.context.get('request')
+        if request and request.user == obj.initiator:
+            return 'buyer'
+        return 'seller'
+
+    def get_counterparty_name(self, obj):
+        """The other party's name — seller's name if I'm the buyer, buyer's
+        full name if I'm the matched seller."""
+        request = self.context.get('request')
+        if request and request.user == obj.initiator:
+            return obj.seller_full_name
+        return obj.initiator.full_name
 
 
 class TransactionDetailSerializer(TransactionSerializer):

@@ -124,12 +124,18 @@ class CreateTransactionView(APIView):
 # ── My transactions ───────────────────────────────────────────────────────────
 
 class MyTransactionsView(APIView):
-    """GET /api/v1/transactions/my/ — all transactions where the user is the buyer."""
+    """
+    GET /api/v1/transactions/my/
+
+    Every transaction the user is party to — as buyer (initiator) or as
+    the named seller (matched by phone number) — regardless of status.
+    This is the full history behind the "معاملاتي" screen.
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         txns = Transaction.objects.select_related('product', 'initiator').filter(
-            initiator=request.user
+            Q(initiator=request.user) | Q(seller_mobile_hash=request.user.phone_hash)
         ).order_by('-created_at')
 
         return Response(

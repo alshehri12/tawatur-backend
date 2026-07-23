@@ -208,6 +208,7 @@ class RegisterIndividualView(APIView):
             user,
             national_id=serializer.validated_data.get('national_id') or None,
             iqama=serializer.validated_data.get('iqama') or None,
+            full_name=serializer.validated_data.get('full_name') or None,
         )
 
         _update_device_fingerprint(user, request)
@@ -296,6 +297,7 @@ class SubmitIndividualVerificationView(APIView):
             request.user,
             national_id=serializer.validated_data.get('national_id') or None,
             iqama=serializer.validated_data.get('iqama') or None,
+            full_name=serializer.validated_data.get('full_name') or None,
         )
 
         if not success:

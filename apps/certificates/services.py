@@ -154,19 +154,40 @@ def _draw_pdf(cert_number: str, cert_type_label: str, product,
         ('الماركة والموديل', f'{product.brand} {product.model}'),
         ('الحالة',  product.get_condition_display()),
     ]
+    is_direct = False
     if transaction:
         from apps.transactions.models import Transaction as TxnModel
+        is_direct = transaction.transaction_type == TxnModel.DIRECT_PURCHASE
         if transaction.price:
             rows.append(('قيمة الصفقة', f'{transaction.price} ريال سعودي'))
         if transaction.approved_at:
             rows.append(('تاريخ التوثيق', transaction.approved_at.strftime('%Y/%m/%d')))
-        if transaction.transaction_type == TxnModel.DIRECT_PURCHASE:
-            if transaction.seller_full_name:
-                rows.append(('اسم البائع', transaction.seller_full_name))
-            if transaction.seller_mobile:
-                rows.append(('جوال البائع', transaction.seller_mobile))
-            if transaction.seller_city:
-                rows.append(('مدينة البائع', transaction.seller_city))
+
+    # ── Parties block — full name, mobile, and ID for BOTH buyer and seller ───
+    seller_lines, buyer_lines = [], []
+    if transaction and is_direct:
+        if transaction.seller_full_name:
+            seller_lines.append(transaction.seller_full_name)
+        if transaction.seller_mobile:
+            seller_lines.append(transaction.seller_mobile)
+        if transaction.seller_id_number:
+            seller_lines.append(transaction.seller_id_number)
+        if transaction.seller_city:
+            seller_lines.append(transaction.seller_city)
+
+        buyer = transaction.initiator
+        if buyer.full_name:
+            buyer_lines.append(buyer.full_name)
+        if buyer.phone_number:
+            buyer_lines.append(buyer.phone_number)
+        if buyer.id_number:
+            buyer_lines.append(buyer.id_number)
+
+    PARTY_LINE_H = 0.52 * cm
+    PARTY_PAD = 0.45 * cm
+    party_lines_n = max(len(seller_lines), len(buyer_lines), 1)
+    party_h = party_lines_n * PARTY_LINE_H + 2 * PARTY_PAD + 0.5 * cm  # +label row
+    has_parties = bool(seller_lines or buyer_lines)
 
     PAGE_W, _A4_H = A4
     M = 2.1 * cm   # content margin — generous, keeps the page from feeling cramped
@@ -183,7 +204,8 @@ def _draw_pdf(cert_number: str, cert_type_label: str, product,
     PAGE_H = (
         HDR_H
         + 1.1 * cm                    # header -> intro line
-        + 0.4 * cm                    # intro line -> card top
+        + 0.4 * cm                    # intro line -> parties/card
+        + (party_h + 0.4 * cm if has_parties else 0)
         + 0.55 * cm
         + card_h
         + 0.9 * cm + 0.95 * cm        # card -> trust pill
@@ -236,6 +258,38 @@ def _draw_pdf(cert_number: str, cert_type_label: str, product,
     c.setFillColor(MUTED)
     c.drawCentredString(PAGE_W / 2, y,
                         _ar('نشهد بأن عملية نقل الملكية المبيّنة أدناه قد اكتملت وتمّ توثيقها رسمياً على منصة تواتر'))
+
+    # ── Parties — البائع / المشتري side by side, full name + mobile + ID ──────
+    if has_parties:
+        y -= 0.4 * cm
+        party_top = y
+        party_bot = party_top - party_h
+        col_gap = 0.3 * cm
+        col_w = (PAGE_W - 2 * M - col_gap) / 2
+        seller_x = PAGE_W - M - col_w   # right column (RTL: seller reads first)
+        buyer_x = M
+
+        for x, title, lines in (
+            (seller_x, 'البائع', seller_lines),
+            (buyer_x, 'المشتري', buyer_lines),
+        ):
+            c.setFillColor(MINT)
+            c.setStrokeColor(LINE)
+            c.setLineWidth(0.75)
+            c.roundRect(x, party_bot, col_w, party_h, radius=6, fill=True, stroke=True)
+
+            ty = party_top - PARTY_PAD - 0.35 * cm
+            c.setFont(font_b, 9)
+            c.setFillColor(GREEN_DEEP)
+            c.drawRightString(x + col_w - 0.4 * cm, ty, _ar(title))
+
+            for i, line in enumerate(lines):
+                ty2 = ty - 0.5 * cm - i * PARTY_LINE_H
+                c.setFont(font_r, 9.5)
+                c.setFillColor(INK)
+                c.drawRightString(x + col_w - 0.4 * cm, ty2, _ar(str(line)))
+
+        y = party_bot
 
     # ── Device details — one simple card, hairline dividers, right-aligned ───
     # (rows / ROW_H / CARD_PAD / card_h already computed above, before the

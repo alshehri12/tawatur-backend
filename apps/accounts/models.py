@@ -44,9 +44,16 @@ class User(AbstractBaseUser, PermissionsMixin):
     user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES)
 
     # ── Individual verification fields ────────────────────────────────────────
-    # Hashed with HMAC so the original ID is never stored in plain text.
+    # Full name — shown on certificates/contracts alongside the seller's info.
+    full_name = models.CharField(max_length=200, blank=True, default='')
+    # Hashed with HMAC — used for lookups (e.g. matching a seller to their
+    # later account) without needing to decrypt every row.
     national_id_hash = models.CharField(max_length=64, null=True, blank=True)
     iqama_hash = models.CharField(max_length=64, null=True, blank=True)
+    # Encrypted (reversible) copies — needed to print the ID number on a
+    # certificate/contract. The hash above remains the lookup key.
+    national_id_encrypted = models.TextField(blank=True, default='')
+    iqama_encrypted = models.TextField(blank=True, default='')
     # True once the user has submitted their ID (mock Absher step).
     identity_submitted = models.BooleanField(default=False)
     # Will become True when real Absher integration is live.
@@ -92,6 +99,25 @@ class User(AbstractBaseUser, PermissionsMixin):
         """Decrypt and return the plain phone number."""
         from core.encryption import decrypt
         return decrypt(self.phone_number_encrypted)
+
+    @property
+    def national_id(self) -> str:
+        if not self.national_id_encrypted:
+            return ''
+        from core.encryption import decrypt
+        return decrypt(self.national_id_encrypted)
+
+    @property
+    def iqama(self) -> str:
+        if not self.iqama_encrypted:
+            return ''
+        from core.encryption import decrypt
+        return decrypt(self.iqama_encrypted)
+
+    @property
+    def id_number(self) -> str:
+        """Whichever of national ID / Iqama is on file — for display purposes."""
+        return self.national_id or self.iqama
 
     @property
     def can_transact(self) -> bool:
