@@ -85,6 +85,26 @@ CACHES = {
 # ── CORS (allow all in dev for easy Postman/simulator testing) ────────────────
 CORS_ALLOW_ALL_ORIGINS = True
 
+# ── CSRF behind the ngrok tunnel ───────────────────────────────────────────────
+# ngrok terminates HTTPS at its edge and forwards to this server over plain
+# HTTP, so Django doesn't see the connection as secure — but the browser's
+# Origin header on the seller-confirmation page's POST is still `https://...`.
+# Without these two settings every "قبول العقد"/"رفض" submit 403s with
+# "فشل التحقق من CSRF": Django trusts X-Forwarded-Proto to know the original
+# request was HTTPS, and needs the ngrok domains explicitly trusted since
+# their scheme (https) differs from what the raw connection looks like (http).
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.ngrok-free.app',
+    'https://*.ngrok-free.dev',
+    'https://*.ngrok.io',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
+if _lan_ip:
+    CSRF_TRUSTED_ORIGINS.append(f'http://{_lan_ip}:8000')
+
 # ── Email (console backend — no real emails in dev) ───────────────────────────
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
