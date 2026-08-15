@@ -118,10 +118,6 @@ def seller_confirm_view(request, token):
                 txn.refresh_from_db()
 
     buyer = txn.initiator
-    buyer_phone = buyer.phone_number
-    buyer_phone_masked = (
-        f'{buyer_phone[:3]} ••• {buyer_phone[-2:]}' if len(buyer_phone) >= 5 else buyer_phone
-    )
     buyer_verified_label = {
         'verified': 'مستخدم موثّق',
         'pending':  'قيد التحقق',
@@ -132,7 +128,9 @@ def seller_confirm_view(request, token):
         'txn': txn,
         'product': txn.product,
         'buyer': buyer,
-        'buyer_phone_masked': buyer_phone_masked,
+        'buyer_full_name': buyer.full_name or '—',
+        'buyer_phone': buyer.phone_number or '—',
+        'buyer_id_number': buyer.id_number or '—',
         'buyer_verified_label': buyer_verified_label,
         'masked_identifier': _masked_imei(txn.product),
         'error': error,

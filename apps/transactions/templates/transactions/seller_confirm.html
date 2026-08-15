@@ -147,9 +147,10 @@
         </div>
         <div class="party">
           <div class="party-role">المشتري</div>
-          <div class="party-row"><b>{{ buyer_verified_label }}</b></div>
-          <div class="party-row"><span>جوال</span><b style="direction:ltr">{{ buyer_phone_masked }}</b></div>
-          <div class="party-row"><span>نوع الحساب</span><b>{{ buyer.get_user_type_display }}</b></div>
+          <div class="party-row"><b>{{ buyer_full_name }}</b></div>
+          <div class="party-row"><span>هوية/إقامة</span><b>{{ buyer_id_number }}</b></div>
+          <div class="party-row"><span>جوال</span><b style="direction:ltr">{{ buyer_phone }}</b></div>
+          <div class="party-row"><span>الحالة</span><b>{{ buyer_verified_label }}</b></div>
         </div>
       </div>
 
@@ -224,11 +225,16 @@
         <div class="party">
           <div class="party-role">البائع</div>
           <div class="party-row"><b>{{ txn.seller_full_name }}</b></div>
+          <div class="party-row"><span>هوية/إقامة</span><b>{{ txn.seller_id_number }}</b></div>
+          <div class="party-row"><span>جوال</span><b style="direction:ltr">{{ txn.seller_mobile }}</b></div>
           <div class="party-row"><span>مدينة</span><b>{{ txn.seller_city }}</b></div>
         </div>
         <div class="party">
           <div class="party-role">المشتري</div>
-          <div class="party-row"><b>{{ buyer_verified_label }}</b></div>
+          <div class="party-row"><b>{{ buyer_full_name }}</b></div>
+          <div class="party-row"><span>هوية/إقامة</span><b>{{ buyer_id_number }}</b></div>
+          <div class="party-row"><span>جوال</span><b style="direction:ltr">{{ buyer_phone }}</b></div>
+          <div class="party-row"><span>الحالة</span><b>{{ buyer_verified_label }}</b></div>
         </div>
       </div>
       <div class="table">
