@@ -26,6 +26,15 @@ from .models import Transaction
 from .services import TransactionService
 
 
+def terms_view(request):
+    """Public terms & conditions page — linked from the app's purchase form
+    and from the public seller-confirmation page, so there's one source of
+    truth for the T&C text."""
+    return render(request, 'transactions/terms.html', {
+        'updated_at': timezone.now().strftime('%Y/%m/%d'),
+    })
+
+
 def _masked_imei(product) -> str:
     imei = product.imei_1 or product.serial_number
     if not imei:
@@ -67,7 +76,14 @@ def seller_confirm_view(request, token):
             txn.refresh_from_db()
 
         elif action == 'start_accept':
-            stage = 'mobile'
+            # Server-side backstop for the client-side checkbox gate — a
+            # request without agreed_terms (JS disabled, form tampered with)
+            # must not be able to proceed past the summary stage.
+            if not request.POST.get('agreed_terms'):
+                error = 'يجب الموافقة على الشروط والأحكام قبل المتابعة.'
+                stage = 'summary'
+            else:
+                stage = 'mobile'
 
         elif action == 'send_otp':
             mobile_value = request.POST.get('mobile', '').strip()

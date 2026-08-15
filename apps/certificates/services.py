@@ -18,8 +18,6 @@ PDF layout (A4, RTL):
 """
 
 import os
-import random
-import string
 from io import BytesIO
 from pathlib import Path
 
@@ -75,17 +73,23 @@ def _register_fonts():
 
 def _generate_certificate_number() -> str:
     """
-    Generate a unique, human-readable certificate number.
-    Format: TW-{YEAR}-{8 random alphanumeric uppercase chars}
-    Example: TW-2026-A3B7KX2Q
+    Generate the next sequential certificate number.
+    Format: TWR-{6-digit zero-padded sequence}
+    Example: TWR-000049
+
+    Backed by a singleton counter row, incremented inside a row-locked
+    transaction so concurrent requests never hand out the same number.
     """
-    from apps.certificates.models import Certificate
-    year = timezone.now().year
-    while True:
-        suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-        number = f'TW-{year}-{suffix}'
-        if not Certificate.objects.filter(certificate_number=number).exists():
-            return number
+    from django.db import transaction as db_transaction
+    from apps.certificates.models import CertificateSequence
+
+    with db_transaction.atomic():
+        seq, _ = CertificateSequence.objects.select_for_update().get_or_create(pk=1)
+        number = f'TWR-{seq.next_value:06d}'
+        seq.next_value += 1
+        seq.save(update_fields=['next_value'])
+
+    return number
 
 
 # ── QR Code ───────────────────────────────────────────────────────────────────
@@ -113,6 +117,44 @@ def _generate_qr(data: str, filename: str) -> str:
     return rel_path
 
 
+# ── Arabic-indic numerals (used for money amounts, matching Saudi convention) ──
+
+_ARABIC_INDIC = str.maketrans('0123456789', '٠١٢٣٤٥٦٧٨٩')
+
+
+def _money_ar(value) -> str:
+    """Format a Decimal/float as '٥٬٣٠٠٫٠٠' — Arabic-indic digits, Arabic
+    thousands (٬) and decimal (٫) separators, matching how Saudi legal
+    documents typically render currency amounts."""
+    formatted = f'{float(value):,.2f}'
+    formatted = formatted.replace(',', '٬').replace('.', '٫')
+    return formatted.translate(_ARABIC_INDIC)
+
+
+def _id_type_label(id_number: str) -> str:
+    """Saudi national IDs start with 1, Iqama (residency) IDs start with 2."""
+    if not id_number:
+        return 'غير محدد'
+    if id_number.startswith('1'):
+        return 'هوية وطنية'
+    if id_number.startswith('2'):
+        return 'إقامة'
+    return 'غير محدد'
+
+
+DISCLAIMER_TITLE = 'إقرار وإخلاء مسؤولية'
+DISCLAIMER_P1 = (
+    'منصة تواتر منصة إلكترونية مختصة بتوثيق عمليات البيع والشراء لضمان الحقوق '
+    'وإثبات وقوع الصفقات. تقتصر مهمتها على التوثيق وتسجيل البيانات المدخلة، '
+    'ولا تتحمل أي مسؤولية عن صحتها أو دقتها.'
+)
+DISCLAIMER_P2 = (
+    'المسؤولية الكاملة عن صحة جميع البيانات الواردة تقع على عاتق مدخلها، '
+    'وأي بيانات غير صحيحة تُعرّض صاحبها للمساءلة القانونية وفق أنظمة المملكة '
+    'العربية السعودية.'
+)
+
+
 # ── PDF Generation ────────────────────────────────────────────────────────────
 
 def _draw_pdf(cert_number: str, cert_type_label: str, product,
@@ -121,11 +163,17 @@ def _draw_pdf(cert_number: str, cert_type_label: str, product,
     """
     Render the certificate PDF and save to media/certificates/pdf/{cert_number}.pdf.
     Returns the path relative to MEDIA_ROOT.
+
+    Layout matches the reference "وثيقة توثيق عملية بيع وشراء" design: a plain
+    letterhead (logo + reference number), a title bar, four numbered sections
+    (المشتري / البائع / السلعة / حالة العقد) each under a navy header bar, a
+    disclaimer box, and a footer — instead of the previous single-card layout.
     """
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import cm
     from reportlab.lib import colors
     from reportlab.pdfgen import canvas as pdfcanvas
+    from reportlab.pdfbase.pdfmetrics import stringWidth
 
     _register_fonts()
 
@@ -135,236 +183,350 @@ def _draw_pdf(cert_number: str, cert_type_label: str, product,
     rel_path = f'certificates/pdf/{cert_number}.pdf'
     output_path = Path(settings.MEDIA_ROOT) / rel_path
 
-    # ── Palette — matches the app's green/white brand identity ────────────────
-    GREEN       = colors.HexColor('#0BA378')
-    GREEN_DEEP  = colors.HexColor('#067A59')
-    GREEN_INK   = colors.HexColor('#0A2E22')
-    MINT        = colors.HexColor('#E9F8F1')
-    INK         = colors.HexColor('#14231C')
-    MUTED       = colors.HexColor('#7A8C83')
-    FAINT       = colors.HexColor('#ADBDB4')
-    LINE        = colors.HexColor('#ECF2EE')
-    WARNING     = colors.HexColor('#B45309')
+    # ── Palette — deep navy + gold, matching the reference document's
+    # formal-letterhead look (deliberately distinct from the app's green UI —
+    # this is a legal document, not an app screen) ────────────────────────────
+    NAVY        = colors.HexColor('#12294A')
+    NAVY_LIGHT  = colors.HexColor('#EEF2F8')
+    GOLD        = colors.HexColor('#C9A84C')
+    INK         = colors.HexColor('#1A1F29')
+    MUTED       = colors.HexColor('#6B7280')
+    FAINT       = colors.HexColor('#9CA6B4')
+    LINE        = colors.HexColor('#E4E9F0')
+    SUCCESS     = colors.HexColor('#0E8C55')
+    LINK_BLUE   = colors.HexColor('#2557A7')
 
-    # ── Build the device/deal rows first — the page height is sized to fit
-    # them exactly, like a real receipt/certificate, instead of forcing a
-    # fixed A4 sheet that leaves most of the page empty ─────────────────────
-    rows = [
-        ('الفئة',   product.get_category_display()),
-        ('الماركة والموديل', f'{product.brand} {product.model}'),
-        ('الحالة',  product.get_condition_display()),
-    ]
-    is_direct = False
-    if transaction:
-        from apps.transactions.models import Transaction as TxnModel
-        is_direct = transaction.transaction_type == TxnModel.DIRECT_PURCHASE
-        if transaction.price:
-            rows.append(('قيمة الصفقة', f'{transaction.price} ريال سعودي'))
-        if transaction.approved_at:
-            rows.append(('تاريخ التوثيق', transaction.approved_at.strftime('%Y/%m/%d')))
-
-    # ── Parties block — full name, mobile, and ID for BOTH buyer and seller ───
-    seller_lines, buyer_lines = [], []
-    if transaction and is_direct:
-        if transaction.seller_full_name:
-            seller_lines.append(transaction.seller_full_name)
-        if transaction.seller_mobile:
-            seller_lines.append(transaction.seller_mobile)
-        if transaction.seller_id_number:
-            seller_lines.append(transaction.seller_id_number)
-        if transaction.seller_city:
-            seller_lines.append(transaction.seller_city)
-
-        buyer = transaction.initiator
-        if buyer.full_name:
-            buyer_lines.append(buyer.full_name)
-        if buyer.phone_number:
-            buyer_lines.append(buyer.phone_number)
-        if buyer.id_number:
-            buyer_lines.append(buyer.id_number)
-
-    PARTY_LINE_H = 0.52 * cm
-    PARTY_PAD = 0.45 * cm
-    party_lines_n = max(len(seller_lines), len(buyer_lines), 1)
-    party_h = party_lines_n * PARTY_LINE_H + 2 * PARTY_PAD + 0.5 * cm  # +label row
-    has_parties = bool(seller_lines or buyer_lines)
-
-    PAGE_W, _A4_H = A4
-    M = 2.1 * cm   # content margin — generous, keeps the page from feeling cramped
-
-    HDR_H    = 3.4 * cm
-    ROW_H    = 0.85 * cm
-    CARD_PAD = 0.5 * cm
-    card_h   = len(rows) * ROW_H + 2 * CARD_PAD
-    QR, QRP  = 3.0 * cm, 0.28 * cm
-    QRF      = QR + 2 * QRP
-
-    # Sum of every vertical gap used below, top to bottom, so the page is
-    # exactly as tall as the content — never a near-empty A4 sheet.
-    PAGE_H = (
-        HDR_H
-        + 1.1 * cm                    # header -> intro line
-        + 0.4 * cm                    # intro line -> parties/card
-        + (party_h + 0.4 * cm if has_parties else 0)
-        + 0.55 * cm
-        + card_h
-        + 0.9 * cm + 0.95 * cm        # card -> trust pill
-        + 0.85 * cm                   # pill -> qr caption
-        + 0.25 * cm + QRF             # qr caption -> qr frame
-        + 0.4 * cm                    # qr -> verification url
-        + 1.3 * cm + 0.6 * cm         # footer + bottom breathing room
-    )
-    PAGE_H = min(PAGE_H, _A4_H)  # never taller than A4, only ever shorter
-
-    c = pdfcanvas.Canvas(str(output_path), pagesize=(PAGE_W, PAGE_H))
     font_r = _ARABIC_FONT if _FONT_REGISTERED else 'Helvetica'
     font_b = _ARABIC_FONT_BOLD if _FONT_REGISTERED else 'Helvetica-Bold'
 
-    def rtl_row(label: str, value: str, y_pos: float, label_size=10, value_size=10.5):
-        """One RTL row: bold muted label on the far right, value right-aligned
-        just inside it — both anchored right so the whole row reads correctly
-        right-to-left, instead of mixing a right-anchored label with a
-        left-anchored value."""
-        c.setFont(font_b, label_size)
+    def wrap_ar(text: str, font: str, size: float, max_width: float) -> list:
+        """Word-wrap `text` (logical order) to fit max_width, measuring each
+        candidate line's *reshaped* width so Arabic ligatures are accounted
+        for. Returns lines still in logical order — _ar() is applied per
+        line at draw time."""
+        words = text.split(' ')
+        lines, current = [], []
+        for w in words:
+            trial = ' '.join(current + [w])
+            if current and stringWidth(_ar(trial), font, size) > max_width:
+                lines.append(' '.join(current))
+                current = [w]
+            else:
+                current.append(w)
+        if current:
+            lines.append(' '.join(current))
+        return lines
+
+    # ── Gather all data up front — nothing here touches the canvas, so the
+    # page height can be computed exactly before it's created ────────────────
+    from apps.transactions.models import Transaction as TxnModel
+    is_direct = bool(transaction) and transaction.transaction_type == TxnModel.DIRECT_PURCHASE
+
+    buyer = transaction.initiator if transaction else None
+    seller_otp_verified = bool(transaction) and transaction.audit_logs.filter(
+        action__in=['seller_confirmed_via_link']
+    ).exists()
+
+    section1_rows = []
+    if buyer:
+        section1_rows = [
+            ('الاسم الكامل', buyer.full_name or '—'),
+            ('رقم الجوال', buyer.phone_number or '—'),
+            ('نوع الحساب', buyer.get_user_type_display()),
+            ('طريقة التحقق', 'تم التحقق عبر رمز OTP للجوال'),
+        ]
+
+    section2_rows = []
+    section2_id_label = 'رقم الهوية / الإقامة'
+    seller_id = ''
+    if transaction and is_direct:
+        seller_id = transaction.seller_id_number or ''
+        section2_rows = [
+            ('الاسم الكامل', transaction.seller_full_name or '—'),
+            ('نوع الهوية', _id_type_label(seller_id)),
+            (section2_id_label, seller_id or '—'),
+            ('التحقق من الهوية',
+             'تم التحقق عبر رمز OTP للجوال' if seller_otp_verified
+             else 'لم يتم التحقق — بيانات مدخلة من المشتري'),
+        ]
+
+    product_headline = f'{product.brand} {product.model} ({product.get_condition_display()})'
+    identifier = product.imei_1 or product.serial_number
+    section3_rows = [
+        ('قيمة الصفقة المتفق عليها',
+         f'{_money_ar(transaction.price)} ريال سعودي' if transaction and transaction.price else '—'),
+        ('المعرّف (رقم تسلسلي/IMEI — إدخال يدوي)',
+         f'{identifier} (يدوي)' if identifier else 'غير مُدخل'),
+    ]
+
+    section4_rows = [
+        ('حالة العقد', 'مكتمل وموثق'),
+        ('تاريخ الإتمام',
+         transaction.approved_at.strftime('%Y/%m/%d %I:%M %p') if transaction and transaction.approved_at else '—'),
+    ]
+
+    # Build the section list, drop empty ones, then number what's left with
+    # Arabic ordinals (أولاً/ثانياً/...) so numbering stays correct even when
+    # a section is skipped (e.g. an on-demand ownership certificate has no
+    # buyer/seller transaction to describe).
+    ordinals = ['أولاً', 'ثانياً', 'ثالثاً', 'رابعاً', 'خامساً']
+    raw_sections = [
+        ('بيانات المشتري', section1_rows, None),
+        ('بيانات البائع', section2_rows, None),
+        ('تفاصيل السلعة', section3_rows, product_headline),
+        ('حالة العقد', section4_rows, None),
+    ]
+    non_empty = [(t, r, h) for (t, r, h) in raw_sections if r]
+    sections = [(f'{ordinals[i]} — {t}', r, h) for i, (t, r, h) in enumerate(non_empty)]
+    section2_full_title = next((t for t, r, h in sections if 'البائع' in t), None)
+
+    if is_direct:
+        intro_text = (
+            'بموجب هذه الوثيقة الصادرة عن منصة تواتر، يُشهد على إتمام عملية البيع '
+            'والشراء الموضحة أدناه بين الطرفين المذكورين، بعد استيفاء إجراءات '
+            'التحقق المطلوبة. وتُعدّ هذه الوثيقة إثباتاً رسمياً لوقوع الصفقة وتفاصيلها.'
+        )
+    else:
+        intro_text = (
+            'بموجب هذه الوثيقة الصادرة عن منصة تواتر، يُشهد بأن الجهاز الموضحة '
+            'بياناته أدناه مسجّل ومملوك حالياً للمالك الموثّق على المنصة.'
+        )
+
+    PAGE_W, _A4_H = A4
+    M = 1.9 * cm
+    CONTENT_W = PAGE_W - 2 * M
+
+    intro_lines = wrap_ar(intro_text, font_r, 9.5, CONTENT_W - 1.0 * cm)
+    disc_p1_lines = wrap_ar(DISCLAIMER_P1, font_r, 8.7, CONTENT_W - 1.2 * cm)
+    disc_p2_lines = wrap_ar(DISCLAIMER_P2, font_r, 8.7, CONTENT_W - 1.2 * cm)
+
+    # ── Vertical rhythm constants ──────────────────────────────────────────
+    HDR_H       = 2.5 * cm
+    TITLE_BAR_H = 1.1 * cm
+    SEC_HDR_H   = 0.8 * cm
+    ROW_H       = 0.72 * cm
+    HEADLINE_H  = 0.85 * cm   # extra row for the bold product name in section 3
+    LINE_H      = 0.4 * cm    # wrapped-text line height
+    QR, QRP     = 2.6 * cm, 0.25 * cm
+    QRF         = QR + 2 * QRP
+
+    def section_h(rows, headline):
+        return SEC_HDR_H + len(rows) * ROW_H + (HEADLINE_H if headline else 0)
+
+    sections_total_h = sum(section_h(r, h) for (_, r, h) in sections)
+    sections_total_h += 0.3 * cm * (len(sections) - 1)  # gap between sections
+
+    disclaimer_h = (
+        0.55 * cm  # title
+        + len(disc_p1_lines) * LINE_H
+        + 0.15 * cm
+        + len(disc_p2_lines) * LINE_H
+        + 0.6 * cm  # box padding
+    )
+
+    PAGE_H = (
+        0.5 * cm                                   # top gold rule margin
+        + HDR_H
+        + 0.3 * cm
+        + TITLE_BAR_H
+        + 0.5 * cm
+        + len(intro_lines) * LINE_H
+        + 0.5 * cm
+        + sections_total_h
+        + 0.5 * cm
+        + disclaimer_h
+        + 0.5 * cm
+        + QRF + 0.7 * cm                           # QR block + captions
+        + 1.6 * cm                                  # footer block
+        + 0.6 * cm                                  # bottom breathing room
+    )
+    PAGE_H = min(PAGE_H, 3 * _A4_H)  # sane upper bound; keeps content-fit sizing
+
+    c = pdfcanvas.Canvas(str(output_path), pagesize=(PAGE_W, PAGE_H))
+
+    def rtl_row(label: str, value: str, y_pos: float, x_right: float, label_w: float):
+        c.setFont(font_b, 9)
         c.setFillColor(MUTED)
-        c.drawRightString(PAGE_W - M, y_pos, _ar(label))
-        c.setFont(font_r, value_size)
+        c.drawRightString(x_right, y_pos, _ar(label))
+        c.setFont(font_r, 9.5)
         c.setFillColor(INK)
-        c.drawRightString(PAGE_W - M - 4.8 * cm, y_pos, _ar(str(value)))
+        c.drawRightString(x_right - label_w, y_pos, _ar(str(value)))
 
-    # ── Header — single flat green band, no ornamentation ─────────────────────
-    HDR_BOT = PAGE_H - HDR_H
+    # ── Top gold rule ─────────────────────────────────────────────────────
+    y = PAGE_H - 0.5 * cm
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(1.5)
+    c.line(M, y, PAGE_W - M, y)
 
-    c.setFillColor(GREEN_INK)
-    c.rect(0, HDR_BOT, PAGE_W, HDR_H, fill=True, stroke=False)
-
+    # ── Header — right: logo + wordmark + subtitle. left: ref + issue date ──
+    y -= 0.15 * cm
+    logo_size = 0.85 * cm
+    c.setFillColor(NAVY)
+    c.roundRect(PAGE_W - M - logo_size, y - logo_size, logo_size, logo_size, radius=4, fill=True, stroke=False)
     c.setFillColor(colors.white)
-    c.setFont(font_b, 26)
-    c.drawRightString(PAGE_W - M, HDR_BOT + 2.05 * cm, _ar('تواتر'))
-    c.setFont(font_r, 10.5)
-    c.setFillColor(colors.HexColor('#BFEFDC'))
-    c.drawRightString(PAGE_W - M, HDR_BOT + 1.4 * cm, _ar('منصّة توثيق ملكية الأجهزة'))
+    c.setFont(font_b, 15)
+    c.drawCentredString(PAGE_W - M - logo_size / 2, y - logo_size + 0.27 * cm, _ar('ت'))
 
+    c.setFillColor(NAVY)
+    c.setFont(font_b, 17)
+    c.drawRightString(PAGE_W - M - logo_size - 0.25 * cm, y - 0.35 * cm, _ar('تواتر'))
+    c.setFillColor(MUTED)
+    c.setFont(font_r, 8.5)
+    c.drawRightString(PAGE_W - M - logo_size - 0.25 * cm, y - 0.85 * cm, _ar('منصة توثيق عمليات البيع والشراء'))
+
+    c.setFillColor(NAVY)
+    c.setFont(font_b, 10.5)
+    c.drawString(M, y - 0.35 * cm, cert_number)
+    c.setFillColor(MUTED)
+    c.setFont(font_r, 8)
+    issued_str = timezone.now().strftime('%Y/%m/%d — %I:%M %p')
+    c.drawString(M, y - 0.85 * cm, _ar(f'تاريخ الإصدار: {issued_str}'))
+
+    y -= HDR_H
+
+    # ── Title bar ───────────────────────────────────────────────────────────
+    # Direct-purchase transactions get the reference document's exact title;
+    # on-demand certificates (no transaction, e.g. current-ownership) fall
+    # back to their own type label since "بيع وشراء" wouldn't apply to them.
+    title_bar_text = 'وثيقة توثيق عملية بيع وشراء' if is_direct else cert_type_label
+    y -= 0.3 * cm
+    c.setFillColor(NAVY_LIGHT)
+    c.rect(M, y - TITLE_BAR_H, CONTENT_W, TITLE_BAR_H, fill=True, stroke=False)
+    c.setFillColor(NAVY)
     c.setFont(font_b, 13)
-    c.setFillColor(colors.white)
-    c.drawString(M, HDR_BOT + 2.05 * cm, _ar(cert_type_label))
-    c.setFont('Helvetica', 9)
-    c.setFillColor(colors.HexColor('#BFEFDC'))
-    c.drawString(M, HDR_BOT + 1.4 * cm, cert_number)
+    c.drawCentredString(PAGE_W / 2, y - TITLE_BAR_H / 2 - 0.15 * cm, _ar(title_bar_text))
+    y -= TITLE_BAR_H
 
-    # ── Intro line ──────────────────────────────────────────────────────────
-    y = HDR_BOT - 1.1 * cm
+    # ── Intro paragraph ─────────────────────────────────────────────────────
+    y -= 0.5 * cm
     c.setFont(font_r, 9.5)
     c.setFillColor(MUTED)
-    c.drawCentredString(PAGE_W / 2, y,
-                        _ar('نشهد بأن عملية نقل الملكية المبيّنة أدناه قد اكتملت وتمّ توثيقها رسمياً على منصة تواتر'))
+    for line in intro_lines:
+        c.drawCentredString(PAGE_W / 2, y, _ar(line))
+        y -= LINE_H
 
-    # ── Parties — البائع / المشتري side by side, full name + mobile + ID ──────
-    if has_parties:
-        y -= 0.4 * cm
-        party_top = y
-        party_bot = party_top - party_h
-        col_gap = 0.3 * cm
-        col_w = (PAGE_W - 2 * M - col_gap) / 2
-        seller_x = PAGE_W - M - col_w   # right column (RTL: seller reads first)
-        buyer_x = M
+    # ── Sections ────────────────────────────────────────────────────────────
+    y -= 0.15 * cm
+    for title, rows, headline in sections:
+        h = section_h(rows, headline)
+        sec_top = y
+        sec_bot = sec_top - h
 
-        for x, title, lines in (
-            (seller_x, 'البائع', seller_lines),
-            (buyer_x, 'المشتري', buyer_lines),
-        ):
-            c.setFillColor(MINT)
-            c.setStrokeColor(LINE)
-            c.setLineWidth(0.75)
-            c.roundRect(x, party_bot, col_w, party_h, radius=6, fill=True, stroke=True)
+        # Navy header bar
+        c.setFillColor(NAVY)
+        c.rect(M, sec_top - SEC_HDR_H, CONTENT_W, SEC_HDR_H, fill=True, stroke=False)
+        c.setFillColor(colors.white)
+        c.setFont(font_b, 10.5)
+        c.drawRightString(PAGE_W - M - 0.35 * cm, sec_top - SEC_HDR_H * 0.65, _ar(title))
 
-            ty = party_top - PARTY_PAD - 0.35 * cm
-            c.setFont(font_b, 9)
-            c.setFillColor(GREEN_DEEP)
-            c.drawRightString(x + col_w - 0.4 * cm, ty, _ar(title))
+        # Body
+        c.setFillColor(colors.white)
+        c.setStrokeColor(LINE)
+        c.setLineWidth(0.75)
+        c.rect(M, sec_bot, CONTENT_W, h - SEC_HDR_H, fill=True, stroke=True)
 
-            for i, line in enumerate(lines):
-                ty2 = ty - 0.5 * cm - i * PARTY_LINE_H
-                c.setFont(font_r, 9.5)
-                c.setFillColor(INK)
-                c.drawRightString(x + col_w - 0.4 * cm, ty2, _ar(str(line)))
+        row_y = sec_top - SEC_HDR_H
 
-        y = party_bot
-
-    # ── Device details — one simple card, hairline dividers, right-aligned ───
-    # (rows / ROW_H / CARD_PAD / card_h already computed above, before the
-    # canvas was created, so the page height could be sized to fit them)
-    y -= 0.55 * cm
-    card_top = y
-    card_bot = card_top - card_h
-
-    c.setFillColor(colors.white)
-    c.setStrokeColor(LINE)
-    c.setLineWidth(0.75)
-    c.roundRect(M, card_bot, PAGE_W - 2 * M, card_h, radius=6, fill=True, stroke=True)
-
-    for i, (lbl, val) in enumerate(rows):
-        row_top = card_top - CARD_PAD - i * ROW_H
-        text_y = row_top - ROW_H * 0.62
-        rtl_row(lbl, val, text_y)
-        if i < len(rows) - 1:
+        if headline:
+            row_y -= HEADLINE_H
+            c.setFillColor(NAVY)
+            c.setFont(font_b, 12.5)
+            c.drawCentredString(PAGE_W / 2, row_y + HEADLINE_H * 0.4, _ar(headline))
             c.setStrokeColor(LINE)
             c.setLineWidth(0.5)
-            c.line(M + 0.4 * cm, row_top - ROW_H, PAGE_W - M - 0.4 * cm, row_top - ROW_H)
+            c.line(M + 0.3 * cm, row_y, PAGE_W - M - 0.3 * cm, row_y)
 
-    # ── Trust score — its own small highlighted line, not buried in the table ─
-    trust_map = {'excellent': 'ممتاز', 'high': 'عالٍ', 'medium': 'متوسط', 'low': 'منخفض'}
-    trust_ar = trust_map.get(product.trust_level, product.trust_level)
-    is_good = product.trust_score >= 65
+        for i, (lbl, val) in enumerate(rows):
+            row_top = row_y - i * ROW_H
+            text_y = row_top - ROW_H * 0.65
+            is_link = (title == section2_full_title and lbl == section2_id_label and val not in ('—', ''))
+            c.setFont(font_b, 9)
+            c.setFillColor(MUTED)
+            c.drawRightString(PAGE_W - M - 0.35 * cm, text_y, _ar(lbl))
+            c.setFont(font_r, 9.5)
+            if val in ('تم التحقق عبر رمز OTP للجوال', 'مكتمل وموثق'):
+                c.setFillColor(SUCCESS)
+            elif is_link:
+                c.setFillColor(LINK_BLUE)
+            else:
+                c.setFillColor(INK)
+            c.drawRightString(PAGE_W - M - 6.6 * cm, text_y, _ar(str(val)))
+            if i < len(rows) - 1:
+                c.setStrokeColor(LINE)
+                c.setLineWidth(0.5)
+                c.line(M + 0.3 * cm, row_top - ROW_H, PAGE_W - M - 0.3 * cm, row_top - ROW_H)
 
-    y = card_bot - 0.9 * cm
-    pill_w, pill_h = 6.4 * cm, 0.95 * cm
-    px = (PAGE_W - pill_w) / 2
-    c.setFillColor(MINT if is_good else colors.HexColor('#FEF6E7'))
-    c.roundRect(px, y - pill_h, pill_w, pill_h, radius=pill_h / 2, fill=True, stroke=False)
-    c.setFont(font_b, 11)
-    c.setFillColor(GREEN_DEEP if is_good else WARNING)
-    c.drawCentredString(PAGE_W / 2, y - pill_h * 0.64,
-                        _ar(f'درجة الثقة  {product.trust_score}/100  —  {trust_ar}'))
+        y = sec_bot - 0.3 * cm
 
-    # ── QR code — simple thin frame, no double borders ─────────────────────
-    # (QR / QRP / QRF already computed above, before the canvas was created)
-    QRX = (PAGE_W - QRF) / 2
+    # ── Disclaimer box ──────────────────────────────────────────────────────
+    y -= 0.2 * cm
+    disc_top = y
+    disc_bot = disc_top - disclaimer_h
+    c.setFillColor(NAVY_LIGHT)
+    c.setStrokeColor(LINE)
+    c.setLineWidth(0.75)
+    c.roundRect(M, disc_bot, CONTENT_W, disclaimer_h, radius=5, fill=True, stroke=True)
 
-    y = y - pill_h - 0.85 * cm
-    c.setFont(font_r, 9)
+    ty = disc_top - 0.45 * cm
+    c.setFont(font_b, 10)
+    c.setFillColor(NAVY)
+    c.drawRightString(PAGE_W - M - 0.6 * cm, ty, _ar(DISCLAIMER_TITLE))
+    ty -= 0.5 * cm
+    c.setFont(font_r, 8.7)
     c.setFillColor(MUTED)
-    c.drawCentredString(PAGE_W / 2, y, _ar('امسح الرمز للتحقق من صحة الشهادة — بلا تسجيل دخول'))
+    for line in disc_p1_lines:
+        c.drawRightString(PAGE_W - M - 0.6 * cm, ty, _ar(line))
+        ty -= LINE_H
+    ty -= 0.15 * cm
+    for line in disc_p2_lines:
+        c.drawRightString(PAGE_W - M - 0.6 * cm, ty, _ar(line))
+        ty -= LINE_H
 
-    qr_frame_bot = y - 0.25 * cm - QRF
+    y = disc_bot
+
+    # ── QR code — kept as an extra beyond the reference design, since it's a
+    # genuinely useful no-login verification path already built on this
+    # platform; still simple/unobtrusive so it doesn't compete visually ──────
+    y -= 0.6 * cm
+    c.setFont(font_r, 8)
+    c.setFillColor(MUTED)
+    c.drawCentredString(PAGE_W / 2, y, _ar('امسح الرمز للتحقق من صحة الوثيقة — بلا تسجيل دخول'))
+
+    qr_frame_bot = y - 0.2 * cm - QRF
+    QRX = (PAGE_W - QRF) / 2
     c.setFillColor(colors.white)
     c.setStrokeColor(LINE)
     c.setLineWidth(0.75)
-    c.roundRect(QRX, qr_frame_bot, QRF, QRF, radius=6, fill=True, stroke=True)
+    c.roundRect(QRX, qr_frame_bot, QRF, QRF, radius=5, fill=True, stroke=True)
 
     full_qr_path = Path(settings.MEDIA_ROOT) / qr_path
     if full_qr_path.exists():
-        c.drawImage(str(full_qr_path),
-                    QRX + QRP, qr_frame_bot + QRP,
-                    width=QR, height=QR)
+        c.drawImage(str(full_qr_path), QRX + QRP, qr_frame_bot + QRP, width=QR, height=QR)
 
-    c.setFont('Helvetica', 7.5)
+    c.setFont('Helvetica', 7)
     c.setFillColor(FAINT)
-    c.drawCentredString(PAGE_W / 2, qr_frame_bot - 0.4 * cm, verification_url)
+    c.drawCentredString(PAGE_W / 2, qr_frame_bot - 0.35 * cm, verification_url)
 
-    # ── Footer — one hairline, no gold stripe ─────────────────────────────────
-    FOOT_Y = 1.3 * cm
-    c.setStrokeColor(LINE)
-    c.setLineWidth(0.75)
-    c.line(M, FOOT_Y + 0.4 * cm, PAGE_W - M, FOOT_Y + 0.4 * cm)
+    y = qr_frame_bot - 0.35 * cm
 
-    issued = timezone.now().strftime('%Y/%m/%d')
+    # ── Footer ──────────────────────────────────────────────────────────────
+    y -= 0.5 * cm
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(1.2)
+    c.line(M, y, PAGE_W - M, y)
+    y -= 0.5 * cm
+
+    c.setFont(font_b, 10.5)
+    c.setFillColor(NAVY)
+    c.drawCentredString(PAGE_W / 2, y, _ar('منصة تواتر'))
+    y -= 0.42 * cm
     c.setFont(font_r, 8)
     c.setFillColor(MUTED)
-    c.drawRightString(PAGE_W - M, FOOT_Y, _ar(f'تاريخ الإصدار: {issued}'))
-    c.setFont('Helvetica', 8)
+    c.drawCentredString(PAGE_W / 2, y, _ar('وثيقة صادرة آلياً — يمكن التحقق منها برقم المرجع أعلاه'))
+    y -= 0.4 * cm
+    c.setFont(font_r, 7.5)
     c.setFillColor(FAINT)
-    c.drawString(M, FOOT_Y, 'Tawatur Platform')
+    c.drawCentredString(PAGE_W / 2, y, _ar(f'رقم المرجع: {cert_number} | {issued_str}'))
 
     c.save()
     return rel_path

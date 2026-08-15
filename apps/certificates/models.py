@@ -95,3 +95,15 @@ class Certificate(models.Model):
             return ''
         from django.conf import settings as s
         return f'{s.MEDIA_URL}{self.qr_code_path}'
+
+
+class CertificateSequence(models.Model):
+    """
+    Singleton counter backing the TWR-NNNNNN certificate number format.
+    Incremented atomically (SELECT ... FOR UPDATE) so concurrent certificate
+    generation never hands out the same number twice.
+    """
+    next_value = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        db_table = 'certificates_sequence'
